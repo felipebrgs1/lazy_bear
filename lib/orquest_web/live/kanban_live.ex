@@ -102,6 +102,11 @@ defmodule OrquestWeb.KanbanLive do
     {:noreply, socket}
   end
 
+  def handle_event("stop_card", %{"card_id" => card_id}, socket) do
+    Kanban.stop_card(card_id)
+    {:noreply, socket}
+  end
+
   # --- Gerenciamento de Projetos ---
 
   def handle_event("open_project_modal", _, socket) do
@@ -458,6 +463,19 @@ defmodule OrquestWeb.KanbanLive do
                               </span>
                             </div>
                           <% end %>
+                          <div class="pt-1.5">
+                            <button
+                              type="button"
+                              phx-click="stop_card"
+                              phx-value-card_id={card.id}
+                              class="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-500 hover:text-red-400 text-[11px] font-semibold border border-red-500/20 hover:border-red-500/40 transition-all"
+                            >
+                              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                              Kill Session
+                            </button>
+                          </div>
                         </div>
                       <% end %>
                       

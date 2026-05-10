@@ -31,6 +31,14 @@ defmodule Orquest.Orchestrator do
     GenServer.call(__MODULE__, {:start_agent, card_id, session_name, workspace_path, description}, :infinity)
   end
 
+  @doc """
+  Para um agente: mata a sessão tmux e libera recursos.
+  Chamado pelo Kanban.stop_card/1.
+  """
+  def stop_agent(card_id) do
+    GenServer.call(__MODULE__, {:stop_agent, card_id}, :infinity)
+  end
+
   # --- Callbacks ---
 
   @impl true
@@ -53,6 +61,20 @@ defmodule Orquest.Orchestrator do
       {:error, reason} ->
         Logger.error("[Orchestrator] Failed to start agent for card #{card_id}: #{reason}")
         {:reply, {:error, reason}, state}
+    end
+  end
+
+  @impl true
+  def handle_call({:stop_agent, card_id}, _from, state) do
+    case Map.fetch(state.running, card_id) do
+      {:ok, session_name} ->
+        kill_tmux_session(session_name)
+        Logger.info("[Orchestrator] Agent stopped for card #{card_id}, session #{session_name}")
+        {:reply, :ok, %{state | running: Map.delete(state.running, card_id)}}
+
+      :error ->
+        Logger.warning("[Orchestrator] Attempted to stop card #{card_id} but it was not running")
+        {:reply, {:error, :not_running}, state}
     end
   end
 
@@ -117,6 +139,11 @@ defmodule Orquest.Orchestrator do
       {_output, 0} -> true
       _ -> false
     end
+  end
+
+  defp kill_tmux_session(session_name) do
+    System.cmd("tmux", ["kill-session", "-t", session_name], stderr_to_stdout: true, into: [])
+    :ok
   end
 
   defp finish_run(state, card_id) do

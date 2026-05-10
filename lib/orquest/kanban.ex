@@ -70,6 +70,30 @@ defmodule Orquest.Kanban do
     broadcast_change()
   end
 
+  @doc """
+  Para um card: mata a sessão tmux, move de volta para backlog e limpa status.
+  """
+  def stop_card(card_id) do
+    card = get_card(card_id)
+
+    if card do
+      Orquest.Orchestrator.stop_agent(card_id)
+
+      move_card(card_id, "backlog", :start)
+
+      update_card(card_id, %{
+        agent_status: "idle",
+        tmux_session: nil,
+        workspace_path: nil,
+        borrowed_by: nil
+      })
+
+      Orquest.Workspace.return(card_id)
+    end
+
+    broadcast_change()
+  end
+
   def subscribe, do: Phoenix.PubSub.subscribe(Orquest.PubSub, "kanban")
 
   def broadcast_change do
