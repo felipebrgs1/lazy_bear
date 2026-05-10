@@ -8,7 +8,8 @@ defmodule OrquestWeb.KanbanLive do
   def mount(_params, _session, socket) do
     if connected?(socket), do: Kanban.subscribe()
 
-    {:ok, assign(socket, board: Kanban.get_board(), editing: nil, deleting_card_id: nil, form: %{})}
+    {:ok,
+     assign(socket, board: Kanban.get_board(), editing: nil, deleting_card_id: nil, form: %{})}
   end
 
   @impl true
@@ -21,10 +22,15 @@ defmodule OrquestWeb.KanbanLive do
     if String.trim(title) != "" do
       Kanban.add_card(column_id, %{title: title, description: "New task", priority: 2})
     end
+
     {:noreply, assign(socket, form: %{})}
   end
 
-  def handle_event("move_card", %{"card_id" => card_id, "to_column" => to_column} = params, socket) do
+  def handle_event(
+        "move_card",
+        %{"card_id" => card_id, "to_column" => to_column} = params,
+        socket
+      ) do
     new_index = Map.get(params, "new_index", :end)
     Kanban.move_card(card_id, to_column, new_index)
     {:noreply, socket}
@@ -45,10 +51,16 @@ defmodule OrquestWeb.KanbanLive do
 
   def handle_event("edit_card", %{"card_id" => card_id}, socket) do
     card = Kanban.get_card(card_id)
-    {:noreply, assign(socket, editing: card_id, form: %{title: card.title, description: card.description})}
+
+    {:noreply,
+     assign(socket, editing: card_id, form: %{title: card.title, description: card.description})}
   end
 
-  def handle_event("save_card", %{"card_id" => card_id, "title" => title, "description" => description}, socket) do
+  def handle_event(
+        "save_card",
+        %{"card_id" => card_id, "title" => title, "description" => description},
+        socket
+      ) do
     Kanban.update_card(card_id, %{title: title, description: description})
     {:noreply, assign(socket, editing: nil, form: %{})}
   end
@@ -83,19 +95,27 @@ defmodule OrquestWeb.KanbanLive do
         <div class="flex items-center gap-3">
           <div class="w-8 h-8 rounded-lg bg-foreground text-background flex items-center justify-center">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"
+              />
             </svg>
           </div>
           <div>
             <h1 class="text-lg font-semibold tracking-tight">Orquest</h1>
-            <p class="text-[11px] text-muted-foreground font-medium uppercase tracking-wider opacity-80">Kanban</p>
+            <p class="text-[11px] text-muted-foreground font-medium uppercase tracking-wider opacity-80">
+              Kanban
+            </p>
           </div>
         </div>
 
         <div class="flex items-center gap-4">
           <div class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted/30 border border-border/50 text-[12px] font-medium text-muted-foreground">
             <span class="relative flex h-1.5 w-1.5">
-              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75">
+              </span>
               <span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
             </span>
             Orchestrator Active
@@ -108,24 +128,53 @@ defmodule OrquestWeb.KanbanLive do
             aria-label="Toggle Theme"
           >
             <!-- Sun icon -->
-            <svg class="w-4 h-4 dark:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+            <svg class="w-4 h-4 dark:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"
+              />
+            </svg>
             <!-- Moon icon -->
-            <svg class="w-4 h-4 hidden dark:block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+            <svg
+              class="w-4 h-4 hidden dark:block"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"
+              />
+            </svg>
           </button>
 
           <button
             phx-click="trigger_orchestrator"
             class="group px-4 py-1.5 bg-foreground hover:bg-foreground/90 text-background rounded-full text-sm font-medium shadow-sm hover:shadow transition-all flex items-center gap-2"
           >
-            <svg class="w-3.5 h-3.5 group-hover:rotate-180 transition-transform duration-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            <svg
+              class="w-3.5 h-3.5 group-hover:rotate-180 transition-transform duration-500"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+              />
             </svg>
             <span>Sync</span>
           </button>
         </div>
       </header>
-
-      <!-- Board Container -->
+      
+    <!-- Board Container -->
       <main class="p-8 overflow-x-auto">
         <div class="flex gap-6 items-start">
           <%= for column <- @board.columns do %>
@@ -133,18 +182,29 @@ defmodule OrquestWeb.KanbanLive do
               <!-- Column Header -->
               <div class="flex items-center justify-between px-1 mb-3">
                 <div class="flex items-center gap-2">
-                  <div class={["w-2 h-2 rounded-full", column_header_accent(column.id) |> String.replace("border", "bg") |> String.replace("/50", "")]}></div>
-                  <h2 class="font-semibold text-[14px] tracking-tight text-foreground/90"><%= column.name %></h2>
+                  <div class={[
+                    "w-2 h-2 rounded-full",
+                    column_header_accent(column.id)
+                    |> String.replace("border", "bg")
+                    |> String.replace("/50", "")
+                  ]}>
+                  </div>
+                  <h2 class="font-semibold text-[14px] tracking-tight text-foreground/90">
+                    {column.name}
+                  </h2>
                   <span class="text-[11px] text-muted-foreground font-mono bg-muted/50 px-1.5 py-0.5 rounded">
-                    <%= length(column.cards) %>
+                    {length(column.cards)}
                   </span>
                 </div>
               </div>
-
-              <!-- Column Body -->
+              
+    <!-- Column Body -->
               <div class="flex flex-col gap-3 min-h-[500px]">
                 <%= if column.id == "backlog" do %>
-                  <form phx-submit="add_card" class="group flex bg-muted/30 hover:bg-muted/50 border border-dashed border-border/60 hover:border-border rounded-xl transition-all shrink-0">
+                  <form
+                    phx-submit="add_card"
+                    class="group flex bg-muted/30 hover:bg-muted/50 border border-dashed border-border/60 hover:border-border rounded-xl transition-all shrink-0"
+                  >
                     <input type="hidden" name="column_id" value={column.id} />
                     <input
                       type="text"
@@ -154,13 +214,21 @@ defmodule OrquestWeb.KanbanLive do
                       required
                       autocomplete="off"
                     />
-                    <button type="submit" class="hidden group-focus-within:block px-4 text-xs font-semibold text-muted-foreground hover:text-foreground">
+                    <button
+                      type="submit"
+                      class="hidden group-focus-within:block px-4 text-xs font-semibold text-muted-foreground hover:text-foreground"
+                    >
                       ADD
                     </button>
                   </form>
                 <% end %>
 
-                <div class="flex-1 space-y-3 min-h-[100px]" id={"cards-list-#{column.id}"} phx-hook="Sortable" data-column={column.id}>
+                <div
+                  class="flex-1 space-y-3 min-h-[100px]"
+                  id={"cards-list-#{column.id}"}
+                  phx-hook="Sortable"
+                  data-column={column.id}
+                >
                   <%= for card <- column.cards do %>
                     <div
                       id={"card-#{card.id}"}
@@ -171,40 +239,62 @@ defmodule OrquestWeb.KanbanLive do
                     >
                       <!-- Header Row -->
                       <div class="flex items-start justify-between gap-3 w-full shrink-0">
-                        <h3 class="font-semibold text-[13px] text-foreground/90 leading-snug group-hover:text-foreground line-clamp-1 flex-1"><%= card.title %></h3>
-                        
+                        <h3 class="font-semibold text-[13px] text-foreground/90 leading-snug group-hover:text-foreground line-clamp-1 flex-1">
+                          {card.title}
+                        </h3>
+
                         <div class="flex items-center gap-1.5 shrink-0 -mt-0.5">
-                          <span class={["text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-tighter", status_badge(card.agent_status)]}>
-                            <%= String.slice(card.agent_status, 0, 3) %>
+                          <span class={[
+                            "text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-tighter",
+                            status_badge(card.agent_status)
+                          ]}>
+                            {String.slice(card.agent_status, 0, 3)}
                           </span>
-                          
-                          <button 
+
+                          <button
                             type="button"
-                            phx-click={JS.push("trigger_delete_prompt", value: %{card_id: card.id})} 
+                            phx-click={JS.push("trigger_delete_prompt", value: %{card_id: card.id})}
                             onclick="event.stopPropagation()"
                             class="opacity-0 group-hover:opacity-100 p-1 rounded text-muted-foreground hover:text-red-500 hover:bg-red-500/10 transition"
                             title="Delete"
                           >
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                            <svg
+                              class="w-3.5 h-3.5"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-width="2"
+                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                              />
+                            </svg>
                           </button>
                         </div>
                       </div>
-
-                      <!-- Description (Visible by default, expands on hover) -->
+                      
+    <!-- Description (Visible by default, expands on hover) -->
                       <%= if card.description && String.trim(card.description) != "" do %>
                         <p class="text-[12px] text-muted-foreground mt-2 leading-relaxed line-clamp-3 group-hover:line-clamp-6 transition-all">
-                          <%= card.description %>
+                          {card.description}
                         </p>
                       <% end %>
-
-                      <!-- Expanded Details (Only visible on hover expansion) -->
+                      
+    <!-- Expanded Details (Only visible on hover expansion) -->
                       <div class="hidden group-hover:block mt-3 pt-2 border-t border-border/40 animate-in fade-in duration-200">
                         <div class="flex items-center gap-1.5 flex-wrap">
-                          <span class={["text-[10px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-tight", status_badge(card.agent_status)]}>
-                            <%= card.agent_status %>
+                          <span class={[
+                            "text-[10px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-tight",
+                            status_badge(card.agent_status)
+                          ]}>
+                            {card.agent_status}
                           </span>
                           <%= for tag <- card.tags do %>
-                            <span class="text-[10px] font-medium text-muted-foreground bg-muted/40 px-1.5 py-0.5 rounded"><%= tag %></span>
+                            <span class="text-[10px] font-medium text-muted-foreground bg-muted/40 px-1.5 py-0.5 rounded">
+                              {tag}
+                            </span>
                           <% end %>
                         </div>
                       </div>
@@ -216,78 +306,123 @@ defmodule OrquestWeb.KanbanLive do
           <% end %>
         </div>
       </main>
-
-      <!-- Minimal Confirmation Dialog -->
+      
+    <!-- Minimal Confirmation Dialog -->
       <%= if @deleting_card_id do %>
-      <div class="fixed inset-0 z-[100] flex items-center justify-center p-4">
-        <div class="fixed inset-0 bg-background/40 backdrop-blur-sm animate-in fade-in duration-200" phx-click="cancel_delete"></div>
-        <div class="relative bg-card border border-border shadow-2xl rounded-2xl p-6 w-full max-w-[340px] animate-in zoom-in-95 duration-200">
-          <div class="flex items-center justify-center w-10 h-10 rounded-full bg-red-500/10 mb-4 text-red-500">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+        <div class="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div
+            class="fixed inset-0 bg-background/40 backdrop-blur-sm animate-in fade-in duration-200"
+            phx-click="cancel_delete"
+          >
           </div>
-          <h3 class="text-lg font-semibold text-foreground leading-tight">Excluir tarefa?</h3>
-          <p class="text-sm text-muted-foreground mt-1 mb-6">Esta ação não pode ser desfeita e a tarefa será removida permanentemente.</p>
-          
-          <div class="flex items-center gap-3 w-full">
-            <button phx-click="cancel_delete" class="flex-1 px-4 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:bg-muted transition border border-transparent hover:border-border/50">
-              Cancelar
-            </button>
-            <button phx-click="delete_card" phx-value-card_id={@deleting_card_id} class="flex-1 px-4 py-2 rounded-lg text-sm font-semibold bg-red-500 hover:bg-red-600 text-white shadow-md shadow-red-500/20 transition">
-              Excluir
-            </button>
-          </div>
-        </div>
-      </div>
-      <% end %>
-
-      <!-- Edit Task Modal -->
-      <%= if @editing do %>
-      <div class="fixed inset-0 z-[100] flex items-center justify-center p-4">
-        <div class="fixed inset-0 bg-background/40 backdrop-blur-sm animate-in fade-in duration-200" phx-click="cancel_edit"></div>
-        <div class="relative bg-card border border-border shadow-2xl rounded-2xl w-full max-w-md animate-in zoom-in-95 duration-200 overflow-hidden flex flex-col">
-          <div class="px-6 py-4 border-b border-border/60 flex items-center justify-between bg-muted/10">
-            <h3 class="text-base font-semibold text-foreground tracking-tight">Editar Tarefa</h3>
-            <button phx-click="cancel_edit" class="p-1 rounded text-muted-foreground hover:text-foreground transition">
-               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-            </button>
-          </div>
-          
-          <form phx-submit="save_card" class="p-6 space-y-5">
-            <input type="hidden" name="card_id" value={@editing} />
-            <div class="space-y-1.5">
-              <label class="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest px-1">Título</label>
-              <input
-                type="text"
-                name="title"
-                value={@form[:title]}
-                class="w-full bg-muted/20 border border-border/60 hover:border-border rounded-xl px-4 py-3 text-sm text-foreground focus:outline-none focus:border-foreground/30 focus:ring-4 focus:ring-foreground/5 transition-all"
-                placeholder="O que precisa ser feito?"
-                required
-                autocomplete="off"
-              />
+          <div class="relative bg-card border border-border shadow-2xl rounded-2xl p-6 w-full max-w-[340px] animate-in zoom-in-95 duration-200">
+            <div class="flex items-center justify-center w-10 h-10 rounded-full bg-red-500/10 mb-4 text-red-500">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                />
+              </svg>
             </div>
-            
-            <div class="space-y-1.5">
-              <label class="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest px-1">Descrição</label>
-              <textarea
-                name="description"
-                rows="6"
-                class="w-full bg-muted/20 border border-border/60 hover:border-border rounded-xl px-4 py-3 text-sm text-foreground resize-none focus:outline-none focus:border-foreground/30 focus:ring-4 focus:ring-foreground/5 transition-all"
-                placeholder="Adicione mais detalhes..."
-              ><%= @form[:description] %></textarea>
-            </div>
+            <h3 class="text-lg font-semibold text-foreground leading-tight">Excluir tarefa?</h3>
+            <p class="text-sm text-muted-foreground mt-1 mb-6">
+              Esta ação não pode ser desfeita e a tarefa será removida permanentemente.
+            </p>
 
-            <div class="flex items-center justify-end gap-3 pt-3">
-              <button type="button" phx-click="cancel_edit" class="px-4 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:bg-muted transition">
+            <div class="flex items-center gap-3 w-full">
+              <button
+                phx-click="cancel_delete"
+                class="flex-1 px-4 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:bg-muted transition border border-transparent hover:border-border/50"
+              >
                 Cancelar
               </button>
-              <button type="submit" class="px-6 py-2 rounded-lg text-sm font-semibold bg-foreground text-background hover:bg-foreground/90 shadow-sm hover:shadow transition-all">
-                Salvar
+              <button
+                phx-click="delete_card"
+                phx-value-card_id={@deleting_card_id}
+                class="flex-1 px-4 py-2 rounded-lg text-sm font-semibold bg-red-500 hover:bg-red-600 text-white shadow-md shadow-red-500/20 transition"
+              >
+                Excluir
               </button>
             </div>
-          </form>
+          </div>
         </div>
-      </div>
+      <% end %>
+      
+    <!-- Edit Task Modal -->
+      <%= if @editing do %>
+        <div class="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
+          <div
+            class="fixed inset-0 bg-background/40 backdrop-blur-sm animate-in fade-in duration-200"
+            phx-click="cancel_edit"
+          >
+          </div>
+          <div class="relative bg-card border border-border shadow-2xl rounded-2xl w-full max-w-3xl max-h-[90vh] animate-in zoom-in-95 duration-200 overflow-hidden flex flex-col">
+            <div class="px-6 py-4 border-b border-border/60 flex items-center justify-between bg-muted/10 flex-shrink-0">
+              <h3 class="text-base font-semibold text-foreground tracking-tight">Editar Tarefa</h3>
+              <button
+                phx-click="cancel_edit"
+                class="p-1 rounded text-muted-foreground hover:text-foreground transition"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+
+            <form phx-submit="save_card" class="p-6 space-y-5 overflow-y-auto">
+              <input type="hidden" name="card_id" value={@editing} />
+              <div class="space-y-1.5">
+                <label class="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest px-1">
+                  Título
+                </label>
+                <input
+                  type="text"
+                  name="title"
+                  value={@form[:title]}
+                  class="w-full bg-muted/20 border border-border/60 hover:border-border rounded-xl px-4 py-3 text-sm text-foreground focus:outline-none focus:border-foreground/30 focus:ring-4 focus:ring-foreground/5 transition-all"
+                  placeholder="O que precisa ser feito?"
+                  required
+                  autocomplete="off"
+                />
+              </div>
+
+              <div class="space-y-1.5 flex-1 flex flex-col min-h-[400px]">
+                <label class="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest px-1">
+                  Descrição
+                </label>
+                <textarea
+                  name="description"
+                  rows="16"
+                  class="w-full flex-1 bg-muted/20 border border-border/60 hover:border-border rounded-xl px-4 py-3 text-sm text-foreground font-mono resize-none focus:outline-none focus:border-foreground/30 focus:ring-4 focus:ring-foreground/5 transition-all leading-relaxed placeholder:font-sans"
+                  placeholder="# Sua documentação aqui..."
+                ><%= @form[:description] %></textarea>
+              </div>
+
+              <div class="flex items-center justify-end gap-3 pt-3">
+                <button
+                  type="button"
+                  phx-click="cancel_edit"
+                  class="px-4 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:bg-muted transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  class="px-6 py-2 rounded-lg text-sm font-semibold bg-foreground text-background hover:bg-foreground/90 shadow-sm hover:shadow transition-all"
+                >
+                  Salvar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       <% end %>
     </div>
     """
