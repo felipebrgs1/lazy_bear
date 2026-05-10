@@ -14,7 +14,9 @@ config :orquest, OrquestWeb.Endpoint,
   code_reloader: true,
   debug_errors: true,
   secret_key_base: "F72PgPeVoRDyu8NESJPz41Q6K3955bYNPQ1fYCeQ0vsMba8i8zdh87u7LDTaXuo9",
-  watchers: []
+  watchers: [
+    tailwind: {Tailwind, :install_and_run, [:orquest, ~w(--watch)]}
+  ]
 
 # ## SSL Support
 #

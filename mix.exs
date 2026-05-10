@@ -42,7 +42,8 @@ defmodule Orquest.MixProject do
       {:jason, "~> 1.2"},
       {:dns_cluster, "~> 0.1.1"},
       {:bandit, "~> 1.5"},
-      {:uniq, "~> 0.1"}
+      {:uniq, "~> 0.1"},
+      {:tailwind, "~> 0.3", runtime: Mix.env() == :dev}
     ]
   end
 
@@ -54,7 +55,9 @@ defmodule Orquest.MixProject do
   # See the documentation for `Mix` for more info on aliases.
   defp aliases do
     [
-      setup: ["deps.get"]
+      setup: ["deps.get", "tailwind.install --if-missing"],
+      dev: ["phx.server"],
+      "assets.deploy": ["tailwind orquest --minify", "phx.digest"]
     ]
   end
 end
