@@ -2,10 +2,9 @@ defmodule Orquest.Orchestrator do
   @moduledoc """
   Orchestrator GenServer que gerencia o ciclo de vida dos agentes.
 
-  - Poll periódico por cards em "todo"
-  - Borrow de workspace
-  - Execução simulada de agente
-  - Movimentação automática entre colunas
+  - Cria sessões tmux com opencode para cada card
+  - Monitora sessões ativas e move cards entre colunas
+  - Libera recursos quando o agente termina
   """
   use GenServer
 
@@ -18,10 +17,23 @@ defmodule Orquest.Orchestrator do
 
   defstruct [:timer_ref, :running, :max_concurrent]
 
+  # --- Public API ---
+
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
+  @doc """
+  Inicia um agente para o card: cria sessão tmux com opencode.
+  Chamado pelo Kanban.start_card/1 após mover o card para in_progress.
+  """
+  def start_agent(card_id, session_name, workspace_path, description) do
+    GenServer.call(__MODULE__, {:start_agent, card_id, session_name, workspace_path, description}, :infinity)
+  end
+
+  # --- Callbacks ---
+
+  @impl true
   def init(_opts) do
     state = %__MODULE__{
       timer_ref: nil,
@@ -31,107 +43,89 @@ defmodule Orquest.Orchestrator do
     {:ok, schedule_tick(state)}
   end
 
+  @impl true
+  def handle_call({:start_agent, card_id, session_name, workspace_path, description}, _from, state) do
+    case create_tmux_session(card_id, session_name, workspace_path, description) do
+      {:ok, _pid} ->
+        Logger.info("[Orchestrator] Agent started for card #{card_id} in tmux session #{session_name}")
+        {:reply, :ok, %{state | running: Map.put(state.running, card_id, session_name)}}
+
+      {:error, reason} ->
+        Logger.error("[Orchestrator] Failed to start agent for card #{card_id}: #{reason}")
+        {:reply, {:error, reason}, state}
+    end
+  end
+
+  @impl true
   def handle_info(:tick, state) do
-    state = dispatch_work(state)
     state = reconcile_runs(state)
     {:noreply, schedule_tick(state)}
   end
 
-  # Consume e ignora o retorno do Task.async, pois o resultado já é enviado via handle_cast
-  def handle_info({ref, _result}, state) when is_reference(ref) do
-    # Desativa o monitor explicitamente para não poluir o inbox com :DOWN se o task já terminou
-    Process.demonitor(ref, [:flush])
-    {:noreply, state}
-  end
-
-  # Ignora a mensagem de finalização automática do processo da task
-  def handle_info({:DOWN, _ref, :process, _pid, _reason}, state) do
-    {:noreply, state}
-  end
-
-  # Catch-all final para garantir que nenhuma mensagem inesperada quebre o processo
+  # Catch-all para mensagens inesperadas
+  @impl true
   def handle_info(_msg, state) do
     {:noreply, state}
   end
 
-  def handle_cast({:agent_done, card_id, result}, state) do
-    state = finish_run(state, card_id, result)
-    {:noreply, state}
-  end
+  # --- Funções Privadas ---
 
-  defp dispatch_work(state) do
-    board = Kanban.get_board()
-    todo_col = Enum.find(board.columns, &(&1.id == "todo"))
+  defp create_tmux_session(_card_id, session_name, workspace_path, description) do
+    File.mkdir_p!(workspace_path)
 
-    if todo_col && length(todo_col.cards) > 0 do
-      available_slots = state.max_concurrent - map_size(state.running)
+    task_file = Path.join(workspace_path, "TASK.md")
 
-      if available_slots > 0 do
-        todo_col.cards
-        |> Enum.take(available_slots)
-        |> Enum.reduce(state, fn card, st ->
-          start_run(st, card)
-        end)
-      else
-        state
-      end
-    else
-      state
+    File.write!(task_file, description)
+
+    case System.cmd("tmux", [
+      "new-session", "-d", "-s", session_name, "-c", workspace_path
+    ], stderr_to_stdout: true, into: []) do
+      {_output, 0} ->
+        cmd = "opencode \"#{task_file}\""
+
+        System.cmd("tmux", [
+          "send-keys", "-t", session_name, cmd, "Enter"
+        ], stderr_to_stdout: true, into: [])
+
+        {:ok, session_name}
+
+      {output, _exit_code} ->
+        {:error, "tmux failed: #{output}"}
     end
-  end
-
-  defp start_run(state, card) do
-    workspace_key = "#{card.id}"
-
-    case Workspace.borrow(card.id, workspace_key) do
-      {:ok, ws} ->
-        Kanban.move_card(card.id, "in_progress")
-        Kanban.update_card(card.id, %{workspace_path: ws.path, agent_status: "running"})
-
-        task = Task.async(fn ->
-          simulate_agent_work(card, ws)
-        end)
-
-        %{state | running: Map.put(state.running, card.id, task)}
-
-      {:error, _} ->
-        state
-    end
-  end
-
-  defp simulate_agent_work(card, workspace) do
-    Logger.info("[Orchestrator] Agent started for card #{card.id} in #{workspace.path}")
-
-    :timer.sleep(:rand.uniform(8_000) + 4_000)
-
-    result = if :rand.uniform() > 0.2 do
-      :success
-    else
-      :failure
-    end
-
-    GenServer.cast(__MODULE__, {:agent_done, card.id, result})
-    result
-  end
-
-  defp finish_run(state, card_id, result) do
-    state = %{state | running: Map.delete(state.running, card_id)}
-
-    case result do
-      :success ->
-        Kanban.move_card(card_id, "done")
-        Kanban.update_card(card_id, %{agent_status: "completed"})
-
-      :failure ->
-        Kanban.move_card(card_id, "todo")
-        Kanban.update_card(card_id, %{agent_status: "idle"})
-    end
-
-    Workspace.return(card_id)
-    state
   end
 
   defp reconcile_runs(state) do
+    active_sessions =
+      state.running
+      |> Enum.filter(fn {_card_id, session_name} ->
+        tmux_session_alive?(session_name)
+      end)
+      |> Map.new()
+
+    finished_ids = Map.keys(state.running) -- Map.keys(active_sessions)
+
+    state = Enum.reduce(finished_ids, state, fn card_id, st ->
+      Logger.info("[Orchestrator] Session ended for card #{card_id}")
+      finish_run(st, card_id)
+    end)
+
+    %{state | running: active_sessions}
+  end
+
+  defp tmux_session_alive?(session_name) do
+    case System.cmd("tmux", ["has-session", "-t", session_name], stderr_to_stdout: true, into: []) do
+      {_output, 0} -> true
+      _ -> false
+    end
+  end
+
+  defp finish_run(state, card_id) do
+    state = %{state | running: Map.delete(state.running, card_id)}
+
+    Kanban.move_card(card_id, "done")
+    Kanban.update_card(card_id, %{agent_status: "completed"})
+
+    Workspace.return(card_id)
     state
   end
 

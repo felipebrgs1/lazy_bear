@@ -74,6 +74,11 @@ defmodule OrquestWeb.KanbanLive do
     {:noreply, socket}
   end
 
+  def handle_event("start_card", %{"card_id" => card_id}, socket) do
+    Kanban.start_card(card_id)
+    {:noreply, socket}
+  end
+
   defp status_badge("running"), do: "bg-blue-500/10 text-blue-500 border-blue-500/20"
   defp status_badge("completed"), do: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
   defp status_badge("failed"), do: "bg-red-500/10 text-red-500 border-red-500/20"
@@ -230,20 +235,34 @@ defmodule OrquestWeb.KanbanLive do
                   data-column={column.id}
                 >
                   <%= for card <- column.cards do %>
+                    <% locked = card.agent_status in ["running", "completed"] %>
+                    <% card_class = if locked do
+                      "group bg-card border border-amber-500/30 bg-amber-500/[0.02] rounded-xl p-3.5 shadow-sm relative cursor-default transition-all duration-300 flex flex-col h-auto"
+                    else
+                      "group bg-card border border-border/60 hover:border-border/100 rounded-xl p-3.5 shadow-sm hover:shadow-md relative cursor-pointer active:cursor-grabbing transition-all duration-300 h-[114px] hover:h-auto overflow-hidden flex flex-col"
+                    end %>
                     <div
                       id={"card-#{card.id}"}
                       data-id={card.id}
-                      phx-click="edit_card"
-                      phx-value-card_id={card.id}
-                      class="group bg-card border border-border/60 hover:border-border/100 rounded-xl p-3.5 shadow-sm hover:shadow-md relative cursor-pointer active:cursor-grabbing transition-all duration-300 h-[114px] hover:h-auto overflow-hidden flex flex-col"
+                      phx-click={unless locked, do: "edit_card"}
+                      phx-value-card_id={unless locked, do: card.id}
+                      class={card_class}
                     >
+                      <!-- Lock Overlay para running -->
+                      <%= if card.agent_status == "running" do %>
+                        <div class="absolute inset-0 rounded-xl bg-gradient-to-b from-amber-500/[0.03] to-transparent pointer-events-none">
+                        </div>
+                      <% end %>
+
                       <!-- Header Row -->
                       <div class="flex items-start justify-between gap-3 w-full shrink-0">
-                        <h3 class="font-semibold text-[13px] text-foreground/90 leading-snug group-hover:text-foreground line-clamp-1 flex-1">
+                        <% title_class = if locked, do: "font-semibold text-[13px] leading-snug line-clamp-1 flex-1 text-foreground", else: "font-semibold text-[13px] leading-snug line-clamp-1 flex-1 text-foreground/90 group-hover:text-foreground" %>
+                        <h3 class={title_class}>
                           {card.title}
                         </h3>
 
                         <div class="flex items-center gap-1.5 shrink-0 -mt-0.5">
+                          <!-- Status Badge -->
                           <span class={[
                             "text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-tighter",
                             status_badge(card.agent_status)
@@ -251,39 +270,88 @@ defmodule OrquestWeb.KanbanLive do
                             {String.slice(card.agent_status, 0, 3)}
                           </span>
 
-                          <button
-                            type="button"
-                            phx-click={JS.push("trigger_delete_prompt", value: %{card_id: card.id})}
-                            onclick="event.stopPropagation()"
-                            class="opacity-0 group-hover:opacity-100 p-1 rounded text-muted-foreground hover:text-red-500 hover:bg-red-500/10 transition"
-                            title="Delete"
-                          >
-                            <svg
-                              class="w-3.5 h-3.5"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
+                          <!-- Lock Icon for running -->
+                          <%= if card.agent_status == "running" do %>
+                            <span class="p-1 rounded text-amber-500" title="Em execução">
+                              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                              </svg>
+                            </span>
+                          <% end %>
+
+                          <!-- Delete Button (hidden for locked cards) -->
+                          <%= unless locked do %>
+                            <button
+                              type="button"
+                              phx-click={JS.push("trigger_delete_prompt", value: %{card_id: card.id})}
+                              onclick="event.stopPropagation()"
+                              class="opacity-0 group-hover:opacity-100 p-1 rounded text-muted-foreground hover:text-red-500 hover:bg-red-500/10 transition"
+                              title="Delete"
                             >
-                              <path
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                                stroke-width="2"
-                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                              />
-                            </svg>
-                          </button>
+                              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
+                          <% end %>
                         </div>
                       </div>
                       
-    <!-- Description (Visible by default, expands on hover) -->
+                      <!-- Description (Visible by default, expands on hover for unlocked) -->
                       <%= if card.description && String.trim(card.description) != "" do %>
-                        <p class="text-[12px] text-muted-foreground mt-2 leading-relaxed line-clamp-3 group-hover:line-clamp-6 transition-all">
+                        <% desc_class = if locked, do: "line-clamp-6", else: "line-clamp-3 group-hover:line-clamp-6" %>
+                        <p class={"text-[12px] text-muted-foreground mt-2 leading-relaxed transition-all #{desc_class}"}>
                           {card.description}
                         </p>
                       <% end %>
+
+                      <!-- Start Button (only for idle cards in todo) -->
+                      <%= if column.id == "todo" && card.agent_status == "idle" do %>
+                        <div class="mt-3 pt-2 border-t border-border/40">
+                          <button
+                            type="button"
+                            phx-click="start_card"
+                            phx-value-card_id={card.id}
+                            class="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-semibold shadow-sm hover:shadow-emerald-500/20 transition-all"
+                          >
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            Start Agent
+                          </button>
+                        </div>
+                      <% end %>
                       
-    <!-- Expanded Details (Only visible on hover expansion) -->
-                      <div class="hidden group-hover:block mt-3 pt-2 border-t border-border/40 animate-in fade-in duration-200">
+                      <!-- Running Info (for running cards) -->
+                      <%= if card.agent_status == "running" && card.tmux_session do %>
+                        <div class="mt-3 pt-2 border-t border-border/40">
+                          <div class="flex items-center gap-2">
+                            <span class="relative flex h-2 w-2">
+                              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                              <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                            </span>
+                            <span class="text-[10px] font-mono text-muted-foreground">
+                              tmux: {card.tmux_session}
+                            </span>
+                          </div>
+                        </div>
+                      <% end %>
+                      
+                      <!-- Completed Info -->
+                      <%= if card.agent_status == "completed" do %>
+                        <div class="mt-3 pt-2 border-t border-border/40">
+                          <span class="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-500">
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            Completed
+                          </span>
+                        </div>
+                      <% end %>
+
+                      <!-- Tags (only visible on hover for unlocked) -->
+                      <% tags_class = if locked, do: "mt-3 pt-2 border-t border-border/40", else: "hidden group-hover:block mt-3 pt-2 border-t border-border/40 animate-in fade-in duration-200" %>
+                      <div class={tags_class}>
                         <div class="flex items-center gap-1.5 flex-wrap">
                           <span class={[
                             "text-[10px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-tight",

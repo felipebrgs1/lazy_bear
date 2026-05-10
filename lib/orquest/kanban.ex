@@ -54,6 +54,29 @@ defmodule Orquest.Kanban do
     end)
   end
 
+  def start_card(card_id) do
+    card = get_card(card_id)
+
+    if card do
+      move_card(card_id, "in_progress", :start)
+
+      {:ok, ws} = Orquest.Workspace.borrow(card_id, "workspace-#{card_id}")
+
+      session_name = "orquest-#{card_id}"
+
+      update_card(card_id, %{
+        workspace_path: ws.path,
+        agent_status: "running",
+        tmux_session: session_name,
+        borrowed_by: ws.borrowed_by
+      })
+
+      Orquest.Orchestrator.start_agent(card_id, session_name, ws.path, card.description)
+    end
+
+    broadcast_change()
+  end
+
   def subscribe, do: Phoenix.PubSub.subscribe(Orquest.PubSub, "kanban")
 
   def broadcast_change do

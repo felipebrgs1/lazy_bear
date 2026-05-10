@@ -10,6 +10,7 @@ defmodule Orquest.Kanban.Card do
     :workspace_path,
     :borrowed_by,
     :agent_status,
+    :tmux_session,
     :tags,
     :created_at,
     :updated_at
