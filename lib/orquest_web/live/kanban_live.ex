@@ -65,7 +65,6 @@ defmodule OrquestWeb.KanbanLive do
 
   defp column_header_bg("backlog"), do: "bg-muted/60 border-border"
   defp column_header_bg("todo"), do: "bg-primary/10 border-primary/40"
-  defp column_header_bg("borrowed"), do: "bg-accent/10 border-accent/40"
   defp column_header_bg("in_progress"), do: "bg-primary/10 border-primary/40"
   defp column_header_bg("review"), do: "bg-secondary/10 border-secondary/40"
   defp column_header_bg("done"), do: "bg-emerald-500/10 border-emerald-500/40"

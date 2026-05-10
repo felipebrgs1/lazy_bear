@@ -37,6 +37,23 @@ defmodule Orquest.Orchestrator do
     {:noreply, schedule_tick(state)}
   end
 
+  # Consume e ignora o retorno do Task.async, pois o resultado já é enviado via handle_cast
+  def handle_info({ref, _result}, state) when is_reference(ref) do
+    # Desativa o monitor explicitamente para não poluir o inbox com :DOWN se o task já terminou
+    Process.demonitor(ref, [:flush])
+    {:noreply, state}
+  end
+
+  # Ignora a mensagem de finalização automática do processo da task
+  def handle_info({:DOWN, _ref, :process, _pid, _reason}, state) do
+    {:noreply, state}
+  end
+
+  # Catch-all final para garantir que nenhuma mensagem inesperada quebre o processo
+  def handle_info(_msg, state) do
+    {:noreply, state}
+  end
+
   def handle_cast({:agent_done, card_id, result}, state) do
     state = finish_run(state, card_id, result)
     {:noreply, state}
@@ -68,7 +85,7 @@ defmodule Orquest.Orchestrator do
 
     case Workspace.borrow(card.id, workspace_key) do
       {:ok, ws} ->
-        Kanban.move_card(card.id, "borrowed")
+        Kanban.move_card(card.id, "in_progress")
         Kanban.update_card(card.id, %{workspace_path: ws.path, agent_status: "running"})
 
         task = Task.async(fn ->

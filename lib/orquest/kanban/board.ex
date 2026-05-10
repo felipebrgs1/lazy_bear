@@ -13,7 +13,6 @@ defmodule Orquest.Kanban.Board do
       columns: [
         Column.new("backlog", "Backlog", "#6b7280"),
         Column.new("todo", "To Do", "#3b82f6"),
-        Column.new("borrowed", "Borrowed", "#f59e0b"),
         Column.new("in_progress", "In Progress", "#8b5cf6"),
         Column.new("review", "Review", "#ec4899"),
         Column.new("done", "Done", "#10b981")
