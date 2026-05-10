@@ -3,13 +3,22 @@ defmodule OrquestWeb.KanbanLive do
 
   alias Orquest.Kanban
   alias Orquest.Orchestrator
+  alias Orquest.Projects
 
   @impl true
   def mount(_params, _session, socket) do
     if connected?(socket), do: Kanban.subscribe()
 
     {:ok,
-     assign(socket, board: Kanban.get_board(), editing: nil, deleting_card_id: nil, form: %{})}
+     assign(socket,
+       board: Kanban.get_board(),
+       editing: nil,
+       deleting_card_id: nil,
+       form: %{},
+       projects: Projects.list(),
+       show_project_modal: false,
+       project_form: %{}
+     )}
   end
 
   @impl true
@@ -17,10 +26,17 @@ defmodule OrquestWeb.KanbanLive do
     {:noreply, assign(socket, board: Kanban.get_board())}
   end
 
+  def handle_info(:projects_updated, socket) do
+    {:noreply, assign(socket, projects: Projects.list())}
+  end
+
   @impl true
-  def handle_event("add_card", %{"column_id" => column_id, "title" => title}, socket) do
+  def handle_event("add_card", %{"column_id" => column_id, "title" => title} = params, socket) do
     if String.trim(title) != "" do
-      Kanban.add_card(column_id, %{title: title, description: "New task", priority: 2})
+      project_path = Map.get(params, "project_path", "")
+      attrs = %{title: title, description: "New task", priority: 2}
+      attrs = if project_path != "", do: Map.put(attrs, :project_path, project_path), else: attrs
+      Kanban.add_card(column_id, attrs)
     end
 
     {:noreply, assign(socket, form: %{})}
@@ -53,15 +69,21 @@ defmodule OrquestWeb.KanbanLive do
     card = Kanban.get_card(card_id)
 
     {:noreply,
-     assign(socket, editing: card_id, form: %{title: card.title, description: card.description})}
+     assign(socket, editing: card_id, form: %{
+       title: card.title,
+       description: card.description,
+       project_path: card.project_path || ""
+     })}
   end
 
   def handle_event(
         "save_card",
-        %{"card_id" => card_id, "title" => title, "description" => description},
+        %{"card_id" => card_id, "title" => title, "description" => description} = params,
         socket
       ) do
-    Kanban.update_card(card_id, %{title: title, description: description})
+    attrs = %{title: title, description: description}
+    attrs = if project_path = Map.get(params, "project_path"), do: Map.put(attrs, :project_path, project_path), else: attrs
+    Kanban.update_card(card_id, attrs)
     {:noreply, assign(socket, editing: nil, form: %{})}
   end
 
@@ -77,6 +99,35 @@ defmodule OrquestWeb.KanbanLive do
   def handle_event("start_card", %{"card_id" => card_id}, socket) do
     Kanban.start_card(card_id)
     {:noreply, socket}
+  end
+
+  # --- Gerenciamento de Projetos ---
+
+  def handle_event("open_project_modal", _, socket) do
+    {:noreply, assign(socket, show_project_modal: true, project_form: %{})}
+  end
+
+  def handle_event("close_project_modal", _, socket) do
+    {:noreply, assign(socket, show_project_modal: false, project_form: %{})}
+  end
+
+  def handle_event("add_project", %{"alias" => alias_name, "path" => path}, socket) do
+    if String.trim(alias_name) != "" and String.trim(path) != "" do
+      Projects.add(String.trim(alias_name), String.trim(path))
+      Process.send(self(), :projects_updated, [])
+    end
+
+    {:noreply, assign(socket, project_form: %{})}
+  end
+
+  def handle_event("remove_project", %{"alias" => alias_name}, socket) do
+    Projects.remove(alias_name)
+    Process.send(self(), :projects_updated, [])
+    {:noreply, socket}
+  end
+
+  def handle_event("folder_selected", %{"name" => dir_name}, socket) do
+    {:noreply, assign(socket, project_form: Map.put(socket.assigns.project_form, "alias", dir_name))}
   end
 
   defp status_badge("running"), do: "bg-blue-500/10 text-blue-500 border-blue-500/20"
@@ -158,6 +209,16 @@ defmodule OrquestWeb.KanbanLive do
           </button>
 
           <button
+            phx-click="open_project_modal"
+            class="px-3 py-1.5 rounded-full border border-border/50 text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-all flex items-center gap-1.5 text-xs font-medium"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+            </svg>
+            Projetos
+          </button>
+
+          <button
             phx-click="trigger_orchestrator"
             class="group px-4 py-1.5 bg-foreground hover:bg-foreground/90 text-background rounded-full text-sm font-medium shadow-sm hover:shadow transition-all flex items-center gap-2"
           >
@@ -208,23 +269,39 @@ defmodule OrquestWeb.KanbanLive do
                 <%= if column.id == "backlog" do %>
                   <form
                     phx-submit="add_card"
-                    class="group flex bg-muted/30 hover:bg-muted/50 border border-dashed border-border/60 hover:border-border rounded-xl transition-all shrink-0"
+                    class="group flex flex-col bg-muted/30 hover:bg-muted/50 border border-dashed border-border/60 hover:border-border rounded-xl transition-all shrink-0"
                   >
                     <input type="hidden" name="column_id" value={column.id} />
-                    <input
-                      type="text"
-                      name="title"
-                      placeholder="+ Add New Task"
-                      class="flex-1 bg-transparent border-none px-4 py-3 text-sm text-foreground placeholder-muted-foreground/60 focus:outline-none focus:ring-0"
-                      required
-                      autocomplete="off"
-                    />
-                    <button
-                      type="submit"
-                      class="hidden group-focus-within:block px-4 text-xs font-semibold text-muted-foreground hover:text-foreground"
-                    >
-                      ADD
-                    </button>
+                    <div class="flex">
+                      <input
+                        type="text"
+                        name="title"
+                        placeholder="+ Add New Task"
+                        class="flex-1 bg-transparent border-none px-4 py-3 text-sm text-foreground placeholder-muted-foreground/60 focus:outline-none focus:ring-0"
+                        required
+                        autocomplete="off"
+                      />
+                      <button
+                        type="submit"
+                        class="hidden group-focus-within:block px-4 text-xs font-semibold text-muted-foreground hover:text-foreground"
+                      >
+                        ADD
+                      </button>
+                    </div>
+                    <div class="flex items-center gap-2 border-t border-dashed border-border/30 px-3 py-1.5">
+                      <svg class="w-3 h-3 text-muted-foreground/40 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                      </svg>
+                      <select
+                        name="project_path"
+                        class="flex-1 bg-transparent border-none text-[11px] text-muted-foreground/70 placeholder-muted-foreground/40 focus:outline-none focus:ring-0 font-mono cursor-pointer appearance-none"
+                      >
+                        <option value="">— sem projeto —</option>
+                        <%= for p <- @projects do %>
+                          <option value={p.path}><%= p.alias %></option>
+                        <% end %>
+                      </select>
+                    </div>
                   </form>
                 <% end %>
 
@@ -324,16 +401,26 @@ defmodule OrquestWeb.KanbanLive do
                       
                       <!-- Running Info (for running cards) -->
                       <%= if card.agent_status == "running" && card.tmux_session do %>
-                        <div class="mt-3 pt-2 border-t border-border/40">
+                        <div class="mt-3 pt-2 border-t border-border/40 space-y-1.5">
                           <div class="flex items-center gap-2">
                             <span class="relative flex h-2 w-2">
                               <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                               <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                             </span>
-                            <span class="text-[10px] font-mono text-muted-foreground">
+                            <span class="text-[10px] font-mono text-muted-foreground truncate" title={card.tmux_session}>
                               tmux: {card.tmux_session}
                             </span>
                           </div>
+                          <%= if card.workspace_path do %>
+                            <div class="flex items-center gap-1.5 pl-4">
+                              <svg class="w-2.5 h-2.5 text-muted-foreground/60 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                              </svg>
+                              <span class="text-[10px] font-mono text-muted-foreground/70 truncate" title={card.workspace_path}>
+                                {card.workspace_path}
+                              </span>
+                            </div>
+                          <% end %>
                         </div>
                       <% end %>
                       
@@ -473,6 +560,21 @@ defmodule OrquestWeb.KanbanLive do
                 ><%= @form[:description] %></textarea>
               </div>
 
+              <div class="space-y-1.5">
+                <label class="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest px-1">
+                  Projeto
+                </label>
+                <select
+                  name="project_path"
+                  class="w-full bg-muted/20 border border-border/60 hover:border-border rounded-xl px-4 py-2.5 text-sm text-foreground font-mono focus:outline-none focus:border-foreground/30 focus:ring-4 focus:ring-foreground/5 transition-all cursor-pointer"
+                >
+                  <option value="">— sem projeto —</option>
+                  <%= for p <- @projects do %>
+                    <option value={p.path} selected={@form[:project_path] == p.path}><%= p.alias %> — <%= p.path %></option>
+                  <% end %>
+                </select>
+              </div>
+
               <div class="flex items-center justify-end gap-3 pt-3">
                 <button
                   type="button"
@@ -489,6 +591,114 @@ defmodule OrquestWeb.KanbanLive do
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      <% end %>
+      
+    <!-- Project Management Modal -->
+      <%= if @show_project_modal do %>
+        <div class="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
+          <div
+            class="fixed inset-0 bg-background/40 backdrop-blur-sm animate-in fade-in duration-200"
+            phx-click="close_project_modal"
+          >
+          </div>
+          <div class="relative bg-card border border-border shadow-2xl rounded-2xl w-full max-w-lg animate-in zoom-in-95 duration-200 overflow-hidden flex flex-col max-h-[90vh]">
+            <div class="px-6 py-4 border-b border-border/60 flex items-center justify-between bg-muted/10 flex-shrink-0">
+              <h3 class="text-base font-semibold text-foreground tracking-tight">Gerenciar Projetos</h3>
+              <button
+                phx-click="close_project_modal"
+                class="p-1 rounded text-muted-foreground hover:text-foreground transition"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div class="p-6 space-y-4 overflow-y-auto">
+              <!-- Lista de projetos -->
+              <div class="space-y-2">
+                <h4 class="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">
+                  Projetos cadastrados
+                </h4>
+                <%= if @projects == [] do %>
+                  <p class="text-sm text-muted-foreground/60 italic">Nenhum projeto cadastrado ainda.</p>
+                <% else %>
+                  <div class="space-y-2">
+                    <%= for p <- @projects do %>
+                      <div class="flex items-center justify-between bg-muted/20 border border-border/40 rounded-lg px-4 py-2.5">
+                        <div class="flex flex-col min-w-0">
+                          <span class="text-sm font-semibold text-foreground"><%= p.alias %></span>
+                          <span class="text-[11px] font-mono text-muted-foreground truncate"><%= p.path %></span>
+                        </div>
+                        <button
+                          phx-click="remove_project"
+                          phx-value-alias={p.alias}
+                          class="p-1.5 rounded text-muted-foreground hover:text-red-500 hover:bg-red-500/10 transition shrink-0 ml-3"
+                          title="Remover projeto"
+                        >
+                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </div>
+                    <% end %>
+                  </div>
+                <% end %>
+              </div>
+
+              <!-- Adicionar novo projeto -->
+              <div class="pt-3 border-t border-border/40">
+                <h4 class="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest mb-3">
+                  Adicionar projeto
+                </h4>
+                <form phx-submit="add_project" class="space-y-3">
+                  <div>
+                    <label class="text-[10px] font-medium text-muted-foreground px-1">Alias</label>
+                    <input
+                      type="text"
+                      name="alias"
+                      placeholder="ex: saas1"
+                      value={@project_form[:alias]}
+                      class="w-full bg-muted/20 border border-border/60 hover:border-border rounded-xl px-4 py-2 text-sm text-foreground font-mono focus:outline-none focus:border-foreground/30 focus:ring-4 focus:ring-foreground/5 transition-all"
+                      required
+                      autocomplete="off"
+                    />
+                  </div>
+                  <div>
+                    <label class="text-[10px] font-medium text-muted-foreground px-1">Caminho</label>
+                    <div class="flex gap-2">
+                      <input
+                        type="text"
+                        name="path"
+                        placeholder="/home/user/meu-projeto"
+                        class="flex-1 bg-muted/20 border border-border/60 hover:border-border rounded-xl px-4 py-2 text-sm text-foreground font-mono focus:outline-none focus:border-foreground/30 focus:ring-4 focus:ring-foreground/5 transition-all"
+                        required
+                        autocomplete="off"
+                      />
+                      <button
+                        type="button"
+                        id="folder-picker-btn"
+                        phx-hook="FolderPicker"
+                        class="px-3 py-2 rounded-xl bg-muted/20 border border-border/60 hover:bg-muted/40 hover:border-border text-muted-foreground hover:text-foreground transition-all shrink-0"
+                        title="Selecionar pasta"
+                      >
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                  <button
+                    type="submit"
+                    class="w-full px-4 py-2 rounded-lg text-sm font-semibold bg-foreground text-background hover:bg-foreground/90 shadow-sm hover:shadow transition-all"
+                  >
+                    Adicionar Projeto
+                  </button>
+                </form>
+              </div>
+            </div>
           </div>
         </div>
       <% end %>

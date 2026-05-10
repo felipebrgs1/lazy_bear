@@ -11,6 +11,7 @@ defmodule Orquest.Application do
       OrquestWeb.Telemetry,
       {DNSCluster, query: Application.get_env(:orquest, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Orquest.PubSub},
+      Orquest.Projects,
       Orquest.Kanban,
       Orquest.Workspace,
       Orquest.Orchestrator,

@@ -23,6 +23,34 @@
       import Sortable from "https://esm.sh/sortablejs@1.15.2";
 
       let Hooks = {};
+
+      Hooks.FolderPicker = {
+        mounted() {
+          let self = this;
+          this.el.addEventListener("click", (e) => {
+            e.preventDefault();
+            const input = document.createElement("input");
+            input.type = "file";
+            input.webkitdirectory = true;
+            input.style.display = "none";
+
+            input.addEventListener("change", (e) => {
+              const files = input.files;
+              if (files.length > 0) {
+                let dirName = files[0].webkitRelativePath.split('/')[0];
+                self.pushEvent("folder_selected", { name: dirName });
+              }
+            });
+
+            document.body.appendChild(input);
+            input.click();
+            setTimeout(() => {
+              if (input.parentNode) document.body.removeChild(input);
+            }, 1000);
+          });
+        }
+      };
+
       Hooks.Sortable = {
         mounted() {
           let self = this;

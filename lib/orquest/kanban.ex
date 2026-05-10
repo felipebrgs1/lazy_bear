@@ -60,7 +60,8 @@ defmodule Orquest.Kanban do
     if card do
       move_card(card_id, "in_progress", :start)
 
-      {:ok, ws} = Orquest.Workspace.borrow(card_id, "workspace-#{card_id}")
+      note_name = Orquest.Workspace.sanitize(card.title || "nota-#{card_id}")
+      {:ok, ws} = Orquest.Workspace.borrow(card_id, card.project_path, note_name)
 
       session_name = "orquest-#{card_id}"
 
@@ -68,7 +69,8 @@ defmodule Orquest.Kanban do
         workspace_path: ws.path,
         agent_status: "running",
         tmux_session: session_name,
-        borrowed_by: ws.borrowed_by
+        borrowed_by: ws.borrowed_by,
+        project_path: ws.project_path
       })
 
       Orquest.Orchestrator.start_agent(card_id, session_name, ws.path, card.description)
