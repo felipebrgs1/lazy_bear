@@ -8,7 +8,7 @@ defmodule OrquestWeb.KanbanLive do
   def mount(_params, _session, socket) do
     if connected?(socket), do: Kanban.subscribe()
 
-    {:ok, assign(socket, board: Kanban.get_board(), editing: nil, form: %{})}
+    {:ok, assign(socket, board: Kanban.get_board(), editing: nil, deleting_card_id: nil, form: %{})}
   end
 
   @impl true
@@ -24,14 +24,23 @@ defmodule OrquestWeb.KanbanLive do
     {:noreply, assign(socket, form: %{})}
   end
 
-  def handle_event("move_card", %{"card_id" => card_id, "to_column" => to_column}, socket) do
-    Kanban.move_card(card_id, to_column)
+  def handle_event("move_card", %{"card_id" => card_id, "to_column" => to_column} = params, socket) do
+    new_index = Map.get(params, "new_index", :end)
+    Kanban.move_card(card_id, to_column, new_index)
     {:noreply, socket}
   end
 
   def handle_event("delete_card", %{"card_id" => card_id}, socket) do
     Kanban.remove_card(card_id)
-    {:noreply, socket}
+    {:noreply, assign(socket, deleting_card_id: nil)}
+  end
+
+  def handle_event("trigger_delete_prompt", %{"card_id" => card_id}, socket) do
+    {:noreply, assign(socket, deleting_card_id: card_id)}
+  end
+
+  def handle_event("cancel_delete", _, socket) do
+    {:noreply, assign(socket, deleting_card_id: nil)}
   end
 
   def handle_event("edit_card", %{"card_id" => card_id}, socket) do
@@ -53,176 +62,233 @@ defmodule OrquestWeb.KanbanLive do
     {:noreply, socket}
   end
 
-  defp priority_dot(1), do: "bg-destructive"
-  defp priority_dot(2), do: "bg-accent"
-  defp priority_dot(3), do: "bg-primary"
-  defp priority_dot(_), do: "bg-muted-foreground"
+  defp status_badge("running"), do: "bg-blue-500/10 text-blue-500 border-blue-500/20"
+  defp status_badge("completed"), do: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
+  defp status_badge("failed"), do: "bg-red-500/10 text-red-500 border-red-500/20"
+  defp status_badge(_), do: "bg-muted/50 text-muted-foreground border-border"
 
-  defp status_badge("running"), do: "bg-primary/15 text-primary border-primary/30"
-  defp status_badge("completed"), do: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
-  defp status_badge("failed"), do: "bg-destructive/15 text-destructive border-destructive/30"
-  defp status_badge(_), do: "bg-muted text-muted-foreground border-border"
-
-  defp column_header_bg("backlog"), do: "bg-muted/60 border-border"
-  defp column_header_bg("todo"), do: "bg-primary/10 border-primary/40"
-  defp column_header_bg("in_progress"), do: "bg-primary/10 border-primary/40"
-  defp column_header_bg("review"), do: "bg-secondary/10 border-secondary/40"
-  defp column_header_bg("done"), do: "bg-emerald-500/10 border-emerald-500/40"
-  defp column_header_bg(_), do: "bg-muted/60 border-border"
+  defp column_header_accent("backlog"), do: "border-muted-foreground/30"
+  defp column_header_accent("todo"), do: "border-blue-500/50"
+  defp column_header_accent("in_progress"), do: "border-amber-500/50"
+  defp column_header_accent("review"), do: "border-purple-500/50"
+  defp column_header_accent("done"), do: "border-emerald-500/50"
+  defp column_header_accent(_), do: "border-muted-foreground/30"
 
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="min-h-screen bg-background">
-      <!-- Header -->
-      <header class="sticky top-0 z-50 backdrop-blur-xl bg-background/70 border-b border-border px-6 py-4 flex items-center justify-between">
-        <div class="flex items-center gap-4">
-          <div class="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shadow-lg shadow-primary/20">
-            <svg class="w-5 h-5 text-primary-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <div class="min-h-screen bg-background text-foreground antialiased">
+      <!-- Global Header -->
+      <header class="sticky top-0 z-50 bg-background/60 backdrop-blur-lg border-b border-border/40 px-8 py-4 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-lg bg-foreground text-background flex items-center justify-center">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
             </svg>
           </div>
           <div>
-            <h1 class="text-xl font-bold tracking-tight text-foreground">Orquest</h1>
-            <p class="text-xs text-muted-foreground font-medium">Multi-Agent Kanban Orchestrator</p>
+            <h1 class="text-lg font-semibold tracking-tight">Orquest</h1>
+            <p class="text-[11px] text-muted-foreground font-medium uppercase tracking-wider opacity-80">Kanban</p>
           </div>
         </div>
-        <div class="flex items-center gap-3">
-          <div class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted border border-border text-xs text-muted-foreground">
-            <span class="relative flex h-2 w-2">
+
+        <div class="flex items-center gap-4">
+          <div class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted/30 border border-border/50 text-[12px] font-medium text-muted-foreground">
+            <span class="relative flex h-1.5 w-1.5">
               <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              <span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
             </span>
             Orchestrator Active
           </div>
+
+          <button
+            type="button"
+            onclick="document.documentElement.classList.toggle('dark'); localStorage.setItem('theme', document.documentElement.classList.contains('dark') ? 'dark' : 'light')"
+            class="w-9 h-9 flex items-center justify-center rounded-full border border-border/50 text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-all"
+            aria-label="Toggle Theme"
+          >
+            <!-- Sun icon -->
+            <svg class="w-4 h-4 dark:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+            <!-- Moon icon -->
+            <svg class="w-4 h-4 hidden dark:block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+          </button>
+
           <button
             phx-click="trigger_orchestrator"
-            class="group relative px-4 py-2 bg-primary hover:bg-primary/90 rounded-lg text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/25 transition-all hover:shadow-primary/40 hover:-translate-y-0.5 active:translate-y-0"
+            class="group px-4 py-1.5 bg-foreground hover:bg-foreground/90 text-background rounded-full text-sm font-medium shadow-sm hover:shadow transition-all flex items-center gap-2"
           >
-            <span class="flex items-center gap-2">
-              <svg class="w-4 h-4 group-hover:animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-              </svg>
-              Trigger Orchestrator
-            </span>
+            <svg class="w-3.5 h-3.5 group-hover:rotate-180 transition-transform duration-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+            <span>Sync</span>
           </button>
         </div>
       </header>
 
-      <!-- Board -->
-      <main class="p-6 overflow-x-auto">
-        <div class="flex gap-5 min-w-max">
+      <!-- Board Container -->
+      <main class="p-8 overflow-x-auto">
+        <div class="flex gap-6 items-start">
           <%= for column <- @board.columns do %>
-            <div class="w-80 shrink-0 flex flex-col">
+            <div class="w-[320px] shrink-0 flex flex-col">
               <!-- Column Header -->
-              <div class={["rounded-t-xl px-4 py-3 border-t border-x flex items-center gap-2.5", column_header_bg(column.id)]}>
-                <div class={["w-2.5 h-2.5 rounded-full ring-2 ring-border", priority_dot(column.id |> String.to_atom() |> then(fn _ -> 1 end))]} style={if column.id != "backlog", do: "background-color: #{column.color}", else: ""}></div>
-                <span class="font-semibold text-sm text-foreground"><%= column.name %></span>
-                <span class="ml-auto text-[11px] font-bold bg-background/40 text-muted-foreground px-2 py-0.5 rounded-md min-w-[20px] text-center">
-                  <%= length(column.cards) %>
-                </span>
+              <div class="flex items-center justify-between px-1 mb-3">
+                <div class="flex items-center gap-2">
+                  <div class={["w-2 h-2 rounded-full", column_header_accent(column.id) |> String.replace("border", "bg") |> String.replace("/50", "")]}></div>
+                  <h2 class="font-semibold text-[14px] tracking-tight text-foreground/90"><%= column.name %></h2>
+                  <span class="text-[11px] text-muted-foreground font-mono bg-muted/50 px-1.5 py-0.5 rounded">
+                    <%= length(column.cards) %>
+                  </span>
+                </div>
               </div>
 
               <!-- Column Body -->
-              <div class="flex-1 bg-muted/40 backdrop-blur-sm rounded-b-xl border border-border border-t-0 p-3 space-y-3 min-h-[450px]">
+              <div class="flex flex-col gap-3 min-h-[500px]">
                 <%= if column.id == "backlog" do %>
-                  <form phx-submit="add_card" class="mb-1">
+                  <form phx-submit="add_card" class="group flex bg-muted/30 hover:bg-muted/50 border border-dashed border-border/60 hover:border-border rounded-xl transition-all shrink-0">
                     <input type="hidden" name="column_id" value={column.id} />
-                    <div class="flex gap-2">
-                      <input
-                        type="text"
-                        name="title"
-                        placeholder="Add a new task..."
-                        class="flex-1 bg-card border border-input rounded-lg px-3.5 py-2.5 text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/50 transition-all"
-                        required
-                      />
-                      <button
-                        type="submit"
-                        class="bg-secondary hover:bg-secondary/80 border border-input px-3.5 py-2.5 rounded-lg text-sm font-bold text-secondary-foreground transition-all hover:border-border"
-                      >
-                        +
-                      </button>
-                    </div>
+                    <input
+                      type="text"
+                      name="title"
+                      placeholder="+ Add New Task"
+                      class="flex-1 bg-transparent border-none px-4 py-3 text-sm text-foreground placeholder-muted-foreground/60 focus:outline-none focus:ring-0"
+                      required
+                      autocomplete="off"
+                    />
+                    <button type="submit" class="hidden group-focus-within:block px-4 text-xs font-semibold text-muted-foreground hover:text-foreground">
+                      ADD
+                    </button>
                   </form>
                 <% end %>
 
-                <%= for card <- column.cards do %>
-                  <div class={[
-                    "group relative bg-card hover:bg-card/80 rounded-xl p-4 border transition-all duration-200 hover:shadow-xl hover:shadow-black/20",
-                    if(card.borrowed_by, do: "border-accent/40 ring-1 ring-accent/20 shadow-lg shadow-accent/5", else: "border-border hover:border-border/80")
-                  ]}>
-                    <%= if @editing == card.id do %>
-                      <form phx-submit="save_card" class="space-y-3">
-                        <input type="hidden" name="card_id" value={card.id} />
-                        <input
-                          type="text"
-                          name="title"
-                          value={@form[:title]}
-                          class="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
-                        />
-                        <textarea
-                          name="description"
-                          rows="2"
-                          class="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm text-muted-foreground resize-none focus:outline-none focus:ring-2 focus:ring-primary/40"
-                        ><%= @form[:description] %></textarea>
-                        <div class="flex gap-2">
-                          <button type="submit" class="bg-primary hover:bg-primary/90 px-4 py-1.5 rounded-lg text-xs font-semibold text-primary-foreground transition">Save</button>
-                          <button type="button" phx-click="cancel_edit" class="bg-secondary hover:bg-secondary/80 px-4 py-1.5 rounded-lg text-xs font-medium text-secondary-foreground transition">Cancel</button>
-                        </div>
-                      </form>
-                    <% else %>
-                      <!-- Card Header -->
-                      <div class="flex items-start justify-between gap-3 mb-2.5">
-                        <h3 class="font-semibold text-sm text-card-foreground leading-snug group-hover:text-foreground transition-colors"><%= card.title %></h3>
-                        <div class="opacity-0 group-hover:opacity-100 transition-opacity flex gap-0.5 shrink-0">
-                          <button phx-click="edit_card" phx-value-card_id={card.id} class="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
-                          </button>
-                          <button phx-click="delete_card" phx-value-card_id={card.id} data-confirm="Delete this card?" class="p-1.5 rounded-md hover:bg-destructive/20 text-muted-foreground hover:text-destructive transition">
+                <div class="flex-1 space-y-3 min-h-[100px]" id={"cards-list-#{column.id}"} phx-hook="Sortable" data-column={column.id}>
+                  <%= for card <- column.cards do %>
+                    <div
+                      id={"card-#{card.id}"}
+                      data-id={card.id}
+                      phx-click="edit_card"
+                      phx-value-card_id={card.id}
+                      class="group bg-card border border-border/60 hover:border-border/100 rounded-xl p-3.5 shadow-sm hover:shadow-md relative cursor-pointer active:cursor-grabbing transition-all duration-300 h-[114px] hover:h-auto overflow-hidden flex flex-col"
+                    >
+                      <!-- Header Row -->
+                      <div class="flex items-start justify-between gap-3 w-full shrink-0">
+                        <h3 class="font-semibold text-[13px] text-foreground/90 leading-snug group-hover:text-foreground line-clamp-1 flex-1"><%= card.title %></h3>
+                        
+                        <div class="flex items-center gap-1.5 shrink-0 -mt-0.5">
+                          <span class={["text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-tighter", status_badge(card.agent_status)]}>
+                            <%= String.slice(card.agent_status, 0, 3) %>
+                          </span>
+                          
+                          <button 
+                            type="button"
+                            phx-click={JS.push("trigger_delete_prompt", value: %{card_id: card.id})} 
+                            onclick="event.stopPropagation()"
+                            class="opacity-0 group-hover:opacity-100 p-1 rounded text-muted-foreground hover:text-red-500 hover:bg-red-500/10 transition"
+                            title="Delete"
+                          >
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
                           </button>
                         </div>
                       </div>
 
-                      <!-- Description -->
-                      <p class="text-[13px] text-muted-foreground mb-3 line-clamp-2 leading-relaxed"><%= card.description %></p>
+                      <!-- Description (Visible by default, expands on hover) -->
+                      <%= if card.description && String.trim(card.description) != "" do %>
+                        <p class="text-[12px] text-muted-foreground mt-2 leading-relaxed line-clamp-3 group-hover:line-clamp-6 transition-all">
+                          <%= card.description %>
+                        </p>
+                      <% end %>
 
-                      <!-- Footer -->
-                      <div class="flex items-center justify-between pt-2 border-t border-border/30">
-                        <div class="flex gap-1.5 flex-wrap">
+                      <!-- Expanded Details (Only visible on hover expansion) -->
+                      <div class="hidden group-hover:block mt-3 pt-2 border-t border-border/40 animate-in fade-in duration-200">
+                        <div class="flex items-center gap-1.5 flex-wrap">
+                          <span class={["text-[10px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-tight", status_badge(card.agent_status)]}>
+                            <%= card.agent_status %>
+                          </span>
                           <%= for tag <- card.tags do %>
-                            <span class="text-[10px] font-semibold bg-muted text-muted-foreground px-2 py-0.5 rounded-md border border-border/30"><%= tag %></span>
+                            <span class="text-[10px] font-medium text-muted-foreground bg-muted/40 px-1.5 py-0.5 rounded"><%= tag %></span>
                           <% end %>
                         </div>
-                        <span class={["text-[10px] font-bold px-2 py-0.5 rounded-md border", status_badge(card.agent_status)]}>
-                          <%= card.agent_status %>
-                        </span>
                       </div>
-
-                      <!-- Move Actions -->
-                      <div class="mt-3 pt-2 border-t border-border/20 flex flex-wrap gap-1">
-                        <%= for target_col <- @board.columns do %>
-                          <%= if target_col.id != column.id do %>
-                            <button
-                              phx-click="move_card"
-                              phx-value-card_id={card.id}
-                              phx-value-to_column={target_col.id}
-                              class="text-[10px] font-medium px-2.5 py-1 rounded-md bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground transition border border-transparent hover:border-border/30"
-                            >
-                              <%= target_col.name %>
-                            </button>
-                          <% end %>
-                        <% end %>
-                      </div>
-                    <% end %>
-                  </div>
-                <% end %>
+                    </div>
+                  <% end %>
+                </div>
               </div>
             </div>
           <% end %>
         </div>
       </main>
+
+      <!-- Minimal Confirmation Dialog -->
+      <%= if @deleting_card_id do %>
+      <div class="fixed inset-0 z-[100] flex items-center justify-center p-4">
+        <div class="fixed inset-0 bg-background/40 backdrop-blur-sm animate-in fade-in duration-200" phx-click="cancel_delete"></div>
+        <div class="relative bg-card border border-border shadow-2xl rounded-2xl p-6 w-full max-w-[340px] animate-in zoom-in-95 duration-200">
+          <div class="flex items-center justify-center w-10 h-10 rounded-full bg-red-500/10 mb-4 text-red-500">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+          </div>
+          <h3 class="text-lg font-semibold text-foreground leading-tight">Excluir tarefa?</h3>
+          <p class="text-sm text-muted-foreground mt-1 mb-6">Esta ação não pode ser desfeita e a tarefa será removida permanentemente.</p>
+          
+          <div class="flex items-center gap-3 w-full">
+            <button phx-click="cancel_delete" class="flex-1 px-4 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:bg-muted transition border border-transparent hover:border-border/50">
+              Cancelar
+            </button>
+            <button phx-click="delete_card" phx-value-card_id={@deleting_card_id} class="flex-1 px-4 py-2 rounded-lg text-sm font-semibold bg-red-500 hover:bg-red-600 text-white shadow-md shadow-red-500/20 transition">
+              Excluir
+            </button>
+          </div>
+        </div>
+      </div>
+      <% end %>
+
+      <!-- Edit Task Modal -->
+      <%= if @editing do %>
+      <div class="fixed inset-0 z-[100] flex items-center justify-center p-4">
+        <div class="fixed inset-0 bg-background/40 backdrop-blur-sm animate-in fade-in duration-200" phx-click="cancel_edit"></div>
+        <div class="relative bg-card border border-border shadow-2xl rounded-2xl w-full max-w-md animate-in zoom-in-95 duration-200 overflow-hidden flex flex-col">
+          <div class="px-6 py-4 border-b border-border/60 flex items-center justify-between bg-muted/10">
+            <h3 class="text-base font-semibold text-foreground tracking-tight">Editar Tarefa</h3>
+            <button phx-click="cancel_edit" class="p-1 rounded text-muted-foreground hover:text-foreground transition">
+               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+          </div>
+          
+          <form phx-submit="save_card" class="p-6 space-y-5">
+            <input type="hidden" name="card_id" value={@editing} />
+            <div class="space-y-1.5">
+              <label class="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest px-1">Título</label>
+              <input
+                type="text"
+                name="title"
+                value={@form[:title]}
+                class="w-full bg-muted/20 border border-border/60 hover:border-border rounded-xl px-4 py-3 text-sm text-foreground focus:outline-none focus:border-foreground/30 focus:ring-4 focus:ring-foreground/5 transition-all"
+                placeholder="O que precisa ser feito?"
+                required
+                autocomplete="off"
+              />
+            </div>
+            
+            <div class="space-y-1.5">
+              <label class="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest px-1">Descrição</label>
+              <textarea
+                name="description"
+                rows="6"
+                class="w-full bg-muted/20 border border-border/60 hover:border-border rounded-xl px-4 py-3 text-sm text-foreground resize-none focus:outline-none focus:border-foreground/30 focus:ring-4 focus:ring-foreground/5 transition-all"
+                placeholder="Adicione mais detalhes..."
+              ><%= @form[:description] %></textarea>
+            </div>
+
+            <div class="flex items-center justify-end gap-3 pt-3">
+              <button type="button" phx-click="cancel_edit" class="px-4 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:bg-muted transition">
+                Cancelar
+              </button>
+              <button type="submit" class="px-6 py-2 rounded-lg text-sm font-semibold bg-foreground text-background hover:bg-foreground/90 shadow-sm hover:shadow transition-all">
+                Salvar
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+      <% end %>
     </div>
     """
   end

@@ -1,14 +1,59 @@
 <!DOCTYPE html>
-<html lang="en" class="dark h-full [scrollbar-gutter:stable]">
+<html lang="en" class="h-full [scrollbar-gutter:stable]">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="csrf-token" content={get_csrf_token()} />
+    <script>
+      if (localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    </script>
     <.live_title default="Orquest">
       {assigns[:page_title]}
     </.live_title>
     <link phx-track-static rel="stylesheet" href={~p"/assets/app.css"} />
-    <script defer phx-track-static type="text/javascript" src={~p"/assets/app.js"}>
+    
+    <script type="module">
+      import "https://esm.sh/phoenix_html@4.1.1";
+      import { Socket } from "https://esm.sh/phoenix@1.7.23";
+      import { LiveSocket } from "https://esm.sh/phoenix_live_view@1.1.30";
+      import Sortable from "https://esm.sh/sortablejs@1.15.2";
+
+      let Hooks = {};
+      Hooks.Sortable = {
+        mounted() {
+          let self = this;
+          this.sortable = new Sortable(this.el, {
+            group: "kanban-cards",
+            animation: 150,
+            ghostClass: "opacity-50",
+            dragClass: "cursor-grabbing",
+            onEnd: function (evt) {
+              // Prevent the DOM reorder from being visually jittery until LiveView diff applies
+              const params = {
+                card_id: evt.item.getAttribute("data-id"),
+                to_column: evt.to.getAttribute("data-column"),
+                new_index: evt.newIndex
+              };
+              self.pushEvent("move_card", params);
+            }
+          });
+        },
+        destroyed() {
+          if (this.sortable) this.sortable.destroy();
+        }
+      };
+
+      let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content");
+      let liveSocket = new LiveSocket("/live", Socket, {
+        hooks: Hooks,
+        params: { _csrf_token: csrfToken }
+      });
+      liveSocket.connect();
+      window.liveSocket = liveSocket;
     </script>
   </head>
   <body class="h-full antialiased">
