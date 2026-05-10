@@ -11,12 +11,8 @@ defmodule Orquest.Projects do
   """
   use Agent
 
-  @default_projects %{
-    "exemplo" => %{alias: "exemplo", path: "/tmp/orquest_example"},
-  }
-
   def start_link(_opts) do
-    Agent.start_link(fn -> @default_projects end, name: __MODULE__)
+    Agent.start_link(fn -> %{} end, name: __MODULE__)
   end
 
   @doc "Lista todos os projetos cadastrados."

@@ -27,29 +27,65 @@
       Hooks.FolderPicker = {
         mounted() {
           let self = this;
-          this.el.addEventListener("click", (e) => {
+          this.el.addEventListener("click", async (e) => {
             e.preventDefault();
-            const input = document.createElement("input");
-            input.type = "file";
-            input.webkitdirectory = true;
-            input.style.display = "none";
-
-            input.addEventListener("change", (e) => {
-              const files = input.files;
-              if (files.length > 0) {
-                let dirName = files[0].webkitRelativePath.split('/')[0];
-                self.pushEvent("folder_selected", { name: dirName });
+            try {
+              // Tenta API moderna File System Access (Chrome 86+, Edge 86+)
+              if (typeof window.showDirectoryPicker === "function") {
+                const handle = await window.showDirectoryPicker({ mode: "read" });
+                // handle.name é o nome REAL do diretório
+                self.pushEvent("folder_selected", {
+                  name: handle.name,
+                  orquestrator_files: await countOrquestratorFiles(handle)
+                });
+              } else {
+                // Fallback: webkitdirectory (não expõe nome real do diretório)
+                fallbackPicker(self);
               }
-            });
-
-            document.body.appendChild(input);
-            input.click();
-            setTimeout(() => {
-              if (input.parentNode) document.body.removeChild(input);
-            }, 1000);
+            } catch (err) {
+              // Usuário cancelou ou API não disponível — tenta fallback
+              if (err.name !== "AbortError" && err.name !== "SecurityError") {
+                fallbackPicker(self);
+              }
+            }
           });
         }
       };
+
+      async function countOrquestratorFiles(dirHandle) {
+        try {
+          const orquestratorHandle = await dirHandle.getDirectoryHandle("orquestrator");
+          let count = 0;
+          for await (const _ of orquestratorHandle.values()) {
+            count++;
+          }
+          return count;
+        } catch {
+          return 0;
+        }
+      }
+
+      function fallbackPicker(self) {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.webkitdirectory = true;
+        input.style.display = "none";
+
+        input.addEventListener("change", (e) => {
+          const files = input.files;
+          if (files.length > 0) {
+            // A API webkitdirectory NÃO expõe o nome do diretório selecionado.
+            // Enviamos sem name para que o servidor derive do path digitado pelo usuário.
+            self.pushEvent("folder_selected", { name: "" });
+          }
+        });
+
+        document.body.appendChild(input);
+        input.click();
+        setTimeout(() => {
+          if (input.parentNode) document.body.removeChild(input);
+        }, 1000);
+      }
 
       Hooks.Sortable = {
         mounted() {
@@ -72,6 +108,31 @@
         },
         destroyed() {
           if (this.sortable) this.sortable.destroy();
+        }
+      };
+
+      Hooks.CopyTmux = {
+        mounted() {
+          let self = this;
+          this.el.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const session = this.el.dataset.session;
+            if (!session) return;
+            const cmd = `tmux attach-session -t ${session}`;
+            navigator.clipboard.writeText(cmd).then(() => {
+              const original = self.el.innerHTML;
+              self.el.innerHTML = '<span class="text-[10px] font-mono text-emerald-400">Copied!</span>';
+              setTimeout(() => { self.el.innerHTML = original; }, 1200);
+            }).catch(() => {
+              // fallback: select text
+              const ta = document.createElement("textarea");
+              ta.value = cmd;
+              document.body.appendChild(ta);
+              ta.select();
+              document.execCommand("copy");
+              document.body.removeChild(ta);
+            });
+          });
         }
       };
 

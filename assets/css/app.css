@@ -12,6 +12,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Merriweather:ital,wght@0,300;0,400;0,700;0,900;1,300;1,400;1,700;1,900&family=Montserrat:ital,wght@0,100..900;1,100..900&family=Ubuntu+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap');
 
 :root {
+  color-scheme: light;
   --background: oklch(0.9856 0.0084 56.3169);
   --foreground: oklch(0.3353 0.0132 2.7676);
   --card: oklch(1.0000 0 0);
@@ -67,6 +68,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   --background: oklch(0.2569 0.0169 352.4042);
   --foreground: oklch(0.9397 0.0119 51.3156);
   --card: oklch(0.3184 0.0176 341.4465);

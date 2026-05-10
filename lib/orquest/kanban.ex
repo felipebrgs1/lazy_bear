@@ -3,19 +3,10 @@ defmodule Orquest.Kanban do
   Gerencia o estado do board Kanban em memória.
   """
   use Agent
-
   alias Orquest.Kanban.Board
 
   def start_link(_opts) do
-    Agent.start_link(fn ->
-      Board.new()
-      |> Board.add_card("backlog", %{title: "Implementar autenticação JWT", description: "Adicionar login com tokens JWT no backend", priority: 1, tags: ["backend", "auth"]})
-      |> Board.add_card("backlog", %{title: "Criar pipeline CI/CD", description: "GitHub Actions para testes e deploy", priority: 2, tags: ["devops"]})
-      |> Board.add_card("backlog", %{title: "Documentar API REST", description: "Swagger/OpenAPI para todos os endpoints", priority: 3, tags: ["docs"]})
-      |> Board.add_card("todo", %{title: "Refatorar módulo de pagamentos", description: "Separar concerns e adicionar testes", priority: 1, tags: ["refactor"]})
-      |> Board.add_card("todo", %{title: "Otimizar queries do dashboard", description: "Adicionar índices e cache Redis", priority: 2, tags: ["perf"]})
-      |> Board.add_card("done", %{title: "Setup inicial do projeto", description: "Configurar Elixir, Phoenix e Docker", priority: 1, tags: ["setup"]})
-    end, name: __MODULE__)
+    Agent.start_link(fn -> Board.new() end, name: __MODULE__)
   end
 
   def get_board, do: Agent.get(__MODULE__, & &1)

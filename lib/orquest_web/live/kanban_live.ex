@@ -82,7 +82,8 @@ defmodule OrquestWeb.KanbanLive do
         socket
       ) do
     attrs = %{title: title, description: description}
-    attrs = if project_path = Map.get(params, "project_path"), do: Map.put(attrs, :project_path, project_path), else: attrs
+    project_path = Map.get(params, "project_path", "")
+    attrs = if project_path != "", do: Map.put(attrs, :project_path, project_path), else: attrs
     Kanban.update_card(card_id, attrs)
     {:noreply, assign(socket, editing: nil, form: %{})}
   end
@@ -112,28 +113,58 @@ defmodule OrquestWeb.KanbanLive do
   end
 
   def handle_event("add_project", %{"alias" => alias_name, "path" => path}, socket) do
-    if String.trim(alias_name) != "" and String.trim(path) != "" do
-      Projects.add(String.trim(alias_name), String.trim(path))
-      Process.send(self(), :projects_updated, [])
-    end
+    alias_name = String.trim(alias_name || "")
+    path = String.trim(path || "")
 
-    {:noreply, assign(socket, project_form: %{})}
+    if path != "" do
+      alias_name = if alias_name == "", do: derive_alias(path), else: alias_name
+
+      Projects.add(alias_name, path)
+      {:noreply, socket |> assign(projects: Projects.list(), project_form: %{})}
+    else
+      {:noreply, assign(socket, project_form: %{})}
+    end
   end
 
   def handle_event("remove_project", %{"alias" => alias_name}, socket) do
     Projects.remove(alias_name)
-    Process.send(self(), :projects_updated, [])
-    {:noreply, socket}
+    {:noreply, assign(socket, projects: Projects.list())}
   end
 
-  def handle_event("folder_selected", %{"name" => dir_name}, socket) do
-    {:noreply, assign(socket, project_form: Map.put(socket.assigns.project_form, "alias", dir_name))}
+  def handle_event("folder_selected", %{"name" => dir_name} = params, socket) do
+    project_form = socket.assigns.project_form
+
+    # showDirectoryPicker (Chrome 86+) retorna o nome REAL do diretório
+    project_form =
+      if dir_name && dir_name != "" do
+        project_form |> Map.put("alias", dir_name) |> Map.put("folder_name", dir_name)
+      else
+        project_form
+      end
+
+    # Verifica se encontrou pasta orquestrator/ com .md files
+    project_form =
+      case Map.get(params, "orquestrator_files") do
+        count when is_integer(count) and count > 0 ->
+          Map.put(project_form, "has_orquestrator", count)
+
+        _ ->
+          project_form
+      end
+
+    {:noreply, assign(socket, project_form: project_form)}
   end
 
   defp status_badge("running"), do: "bg-blue-500/10 text-blue-500 border-blue-500/20"
   defp status_badge("completed"), do: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
   defp status_badge("failed"), do: "bg-red-500/10 text-red-500 border-red-500/20"
   defp status_badge(_), do: "bg-muted/50 text-muted-foreground border-border"
+
+  defp derive_alias(path) do
+    path
+    |> String.trim_trailing("/")
+    |> Path.basename()
+  end
 
   defp column_header_accent("backlog"), do: "border-muted-foreground/30"
   defp column_header_accent("todo"), do: "border-blue-500/50"
@@ -296,9 +327,9 @@ defmodule OrquestWeb.KanbanLive do
                         name="project_path"
                         class="flex-1 bg-transparent border-none text-[11px] text-muted-foreground/70 placeholder-muted-foreground/40 focus:outline-none focus:ring-0 font-mono cursor-pointer appearance-none"
                       >
-                        <option value="">— sem projeto —</option>
+                        <option value="" class="bg-card text-foreground">— sem projeto —</option>
                         <%= for p <- @projects do %>
-                          <option value={p.path}><%= p.alias %></option>
+                          <option value={p.path} class="bg-card text-foreground"><%= p.alias %></option>
                         <% end %>
                       </select>
                     </div>
@@ -407,7 +438,13 @@ defmodule OrquestWeb.KanbanLive do
                               <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                               <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                             </span>
-                            <span class="text-[10px] font-mono text-muted-foreground truncate" title={card.tmux_session}>
+                            <span
+                              id={"tmux-#{card.id}"}
+                              phx-hook="CopyTmux"
+                              data-session={card.tmux_session}
+                              class="text-[10px] font-mono text-muted-foreground truncate cursor-pointer hover:text-emerald-400 transition-colors"
+                              title="Click to copy: tmux attach-session -t #{card.tmux_session}"
+                            >
                               tmux: {card.tmux_session}
                             </span>
                           </div>
@@ -568,9 +605,11 @@ defmodule OrquestWeb.KanbanLive do
                   name="project_path"
                   class="w-full bg-muted/20 border border-border/60 hover:border-border rounded-xl px-4 py-2.5 text-sm text-foreground font-mono focus:outline-none focus:border-foreground/30 focus:ring-4 focus:ring-foreground/5 transition-all cursor-pointer"
                 >
-                  <option value="">— sem projeto —</option>
+                  <option value="" class="bg-card text-foreground">— sem projeto —</option>
                   <%= for p <- @projects do %>
-                    <option value={p.path} selected={@form[:project_path] == p.path}><%= p.alias %> — <%= p.path %></option>
+                    <option value={p.path} selected={@form[:project_path] == p.path} class="bg-card text-foreground">
+                      <%= p.alias %> — <%= p.path %>
+                    </option>
                   <% end %>
                 </select>
               </div>
