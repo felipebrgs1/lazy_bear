@@ -17,6 +17,9 @@ defmodule Orquest.Orchestrator do
 
   defstruct [:timer_ref, :running, :max_concurrent]
 
+  @output_log "output.log"
+  @clean_regex ~r/[\r\f\x00\x08]|\e\[[\d;]*[a-zA-Z]/
+
   # --- Public API ---
 
   def start_link(opts) do
@@ -56,7 +59,8 @@ defmodule Orquest.Orchestrator do
     case create_tmux_session(card_id, session_name, workspace_path, description) do
       {:ok, _pid} ->
         Logger.info("[Orchestrator] Agent started for card #{card_id} in tmux session #{session_name}")
-        {:reply, :ok, %{state | running: Map.put(state.running, card_id, session_name)}}
+        agent = %{session_name: session_name, workspace_path: workspace_path}
+        {:reply, :ok, %{state | running: Map.put(state.running, card_id, agent)}}
 
       {:error, reason} ->
         Logger.error("[Orchestrator] Failed to start agent for card #{card_id}: #{reason}")
@@ -67,8 +71,9 @@ defmodule Orquest.Orchestrator do
   @impl true
   def handle_call({:stop_agent, card_id}, _from, state) do
     case Map.fetch(state.running, card_id) do
-      {:ok, session_name} ->
+      {:ok, %{session_name: session_name}} ->
         kill_tmux_session(session_name)
+        capture_output(card_id, state)
         Logger.info("[Orchestrator] Agent stopped for card #{card_id}, session #{session_name}")
         {:reply, :ok, %{state | running: Map.delete(state.running, card_id)}}
 
@@ -103,7 +108,9 @@ defmodule Orquest.Orchestrator do
       "new-session", "-d", "-s", session_name, "-c", workspace_path
     ], stderr_to_stdout: true, into: []) do
       {_output, 0} ->
-        cmd = "opencode \"#{task_file}\""
+        escaped_desc = String.replace(description, "\"", "\\\"")
+        log_path = Path.join(workspace_path, @output_log)
+        cmd = "opencode run \"#{escaped_desc}\" 2>&1 | tee #{log_path}; exit"
 
         System.cmd("tmux", [
           "send-keys", "-t", session_name, cmd, "Enter"
@@ -119,8 +126,8 @@ defmodule Orquest.Orchestrator do
   defp reconcile_runs(state) do
     active_sessions =
       state.running
-      |> Enum.filter(fn {_card_id, session_name} ->
-        tmux_session_alive?(session_name)
+      |> Enum.filter(fn {_card_id, agent} ->
+        tmux_session_alive?(agent.session_name)
       end)
       |> Map.new()
 
@@ -128,6 +135,7 @@ defmodule Orquest.Orchestrator do
 
     state = Enum.reduce(finished_ids, state, fn card_id, st ->
       Logger.info("[Orchestrator] Session ended for card #{card_id}")
+      capture_output(card_id, st)
       finish_run(st, card_id)
     end)
 
@@ -144,6 +152,21 @@ defmodule Orquest.Orchestrator do
   defp kill_tmux_session(session_name) do
     System.cmd("tmux", ["kill-session", "-t", session_name], stderr_to_stdout: true, into: [])
     :ok
+  end
+
+  defp capture_output(card_id, state) do
+    case Map.fetch(state.running, card_id) do
+      {:ok, %{workspace_path: ws_path}} ->
+        log_path = Path.join(ws_path, @output_log)
+        if File.exists?(log_path) do
+          raw = File.read!(log_path)
+          clean = String.replace(raw, @clean_regex, "")
+          Kanban.update_card(card_id, %{output_log: clean})
+          Logger.info("[Orchestrator] Captured output for card #{card_id} (#{byte_size(raw)} bytes)")
+        end
+      _ ->
+        :ok
+    end
   end
 
   defp finish_run(state, card_id) do

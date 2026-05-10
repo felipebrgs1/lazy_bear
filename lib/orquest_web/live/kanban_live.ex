@@ -446,7 +446,7 @@ defmodule OrquestWeb.KanbanLive do
                             <span
                               id={"tmux-#{card.id}"}
                               phx-hook="CopyTmux"
-                              data-session={card.tmux_session}
+                              data-cmd={"tmux attach-session -t #{card.tmux_session}"}
                               class="text-[10px] font-mono text-muted-foreground truncate cursor-pointer hover:text-emerald-400 transition-colors"
                               title="Click to copy: tmux attach-session -t #{card.tmux_session}"
                             >
@@ -458,8 +458,14 @@ defmodule OrquestWeb.KanbanLive do
                               <svg class="w-2.5 h-2.5 text-muted-foreground/60 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                               </svg>
-                              <span class="text-[10px] font-mono text-muted-foreground/70 truncate" title={card.workspace_path}>
-                                {card.workspace_path}
+                              <span
+                                id={"ws-#{card.id}"}
+                                phx-hook="CopyTmux"
+                                data-cmd={"opencode run \"#{card.title}\""}
+                                class="text-[10px] font-mono text-muted-foreground/70 truncate cursor-pointer hover:text-emerald-400 transition-colors"
+                                title="Click to copy: opencode run #{card.title}"
+                              >
+                                @[#{card.workspace_path}]
                               </span>
                             </div>
                           <% end %>
@@ -481,13 +487,37 @@ defmodule OrquestWeb.KanbanLive do
                       
                       <!-- Completed Info -->
                       <%= if card.agent_status == "completed" do %>
-                        <div class="mt-3 pt-2 border-t border-border/40">
+                        <div class="mt-3 pt-2 border-t border-border/40 space-y-2">
                           <span class="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-500">
                             <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                             </svg>
                             Completed
                           </span>
+                          <%= if card.output_log && String.trim(card.output_log) != "" do %>
+                            <details class="group">
+                              <summary class="text-[10px] font-medium text-muted-foreground/60 hover:text-muted-foreground cursor-pointer select-none inline-flex items-center gap-2">
+                                <span class="group-open:hidden">Show output</span>
+                                <span class="hidden group-open:inline">Hide output</span>
+                                <button
+                                  id={"copy-output-#{card.id}"}
+                                  phx-hook="CopyOutput"
+                                  data-target={"output-#{card.id}"}
+                                  onclick="event.stopPropagation()"
+                                  class="p-0.5 rounded text-muted-foreground/40 hover:text-muted-foreground transition"
+                                  title="Copy output"
+                                >
+                                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                  </svg>
+                                </button>
+                              </summary>
+                              <pre
+                                id={"output-#{card.id}"}
+                                class="mt-1.5 text-[10px] font-mono text-muted-foreground/80 bg-muted/30 rounded-lg p-2 max-h-[200px] overflow-y-auto whitespace-pre-wrap leading-relaxed"
+                              ><%= card.output_log %></pre>
+                            </details>
+                          <% end %>
                         </div>
                       <% end %>
 

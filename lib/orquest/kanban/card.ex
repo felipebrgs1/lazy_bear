@@ -13,6 +13,7 @@ defmodule Orquest.Kanban.Card do
     :agent_status,
     :tmux_session,
     :tags,
+    :output_log,
     :created_at,
     :updated_at
   ]

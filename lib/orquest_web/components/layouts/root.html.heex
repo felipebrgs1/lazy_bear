@@ -116,21 +116,35 @@
           let self = this;
           this.el.addEventListener("click", (e) => {
             e.stopPropagation();
-            const session = this.el.dataset.session;
-            if (!session) return;
-            const cmd = `tmux attach-session -t ${session}`;
+            const cmd = this.el.dataset.cmd;
+            if (!cmd) return;
             navigator.clipboard.writeText(cmd).then(() => {
               const original = self.el.innerHTML;
               self.el.innerHTML = '<span class="text-[10px] font-mono text-emerald-400">Copied!</span>';
               setTimeout(() => { self.el.innerHTML = original; }, 1200);
             }).catch(() => {
-              // fallback: select text
               const ta = document.createElement("textarea");
               ta.value = cmd;
               document.body.appendChild(ta);
               ta.select();
               document.execCommand("copy");
               document.body.removeChild(ta);
+            });
+          });
+        }
+      };
+
+      Hooks.CopyOutput = {
+        mounted() {
+          this.el.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const target = document.getElementById(this.el.dataset.target);
+            if (!target) return;
+            const text = target.textContent;
+            navigator.clipboard.writeText(text).then(() => {
+              const original = this.el.innerHTML;
+              this.el.innerHTML = '<svg class="w-3 h-3 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>';
+              setTimeout(() => { this.el.innerHTML = original; }, 1200);
             });
           });
         }
