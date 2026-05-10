@@ -1,15 +1,40 @@
 defmodule Orquest.Kanban do
   @moduledoc """
-  Gerencia o estado do board Kanban em memória.
+  Gerencia o board Kanban, com persistência em arquivos .md nos projetos.
+
+  Cards são armazenados como arquivos .md em `{project_path}/orquestrator/`.
+  O app mantém um cache em memória para acesso rápido.
   """
   use Agent
   alias Orquest.Kanban.Board
+  alias Orquest.Projects
+
+  # Runtime fields that should NOT be overwritten when reloading from .md
+  @runtime_fields [:agent_status, :tmux_session, :workspace_path, :borrowed_by, :output_log]
 
   def start_link(_opts) do
-    Agent.start_link(fn -> Board.new() end, name: __MODULE__)
+    Agent.start_link(fn -> init_board() end, name: __MODULE__)
   end
 
+  defp init_board do
+    board = Board.new()
+    projects = Projects.list()
+    Board.load_cards(board, projects)
+  end
+
+  @doc "Retorna o board atual (cache em memória)."
   def get_board, do: Agent.get(__MODULE__, & &1)
+
+  @doc "Recarrega todos os cards dos projetos (Sync). Preserva estado runtime."
+  def reload do
+    Agent.update(__MODULE__, fn board ->
+      runtime = capture_runtime(board)
+      projects = Projects.list()
+      board = Board.load_cards(board, projects)
+      restore_runtime(board, runtime)
+    end)
+    broadcast_change()
+  end
 
   def add_card(column_id, attrs) do
     Agent.update(__MODULE__, fn board ->
@@ -98,5 +123,23 @@ defmodule Orquest.Kanban do
 
   def broadcast_change do
     Phoenix.PubSub.broadcast(Orquest.PubSub, "kanban", :board_updated)
+  end
+
+  # --- Helpers ---
+
+  defp capture_runtime(board) do
+    board.columns
+    |> Enum.flat_map(& &1.cards)
+    |> Enum.filter(fn c -> c.agent_status && c.agent_status != "idle" end)
+    |> Enum.map(fn c ->
+      {c.id, Map.take(c, @runtime_fields)}
+    end)
+    |> Map.new()
+  end
+
+  defp restore_runtime(board, runtime) do
+    Enum.reduce(runtime, board, fn {card_id, fields}, acc ->
+      Board.update_card(acc, card_id, fields)
+    end)
   end
 end

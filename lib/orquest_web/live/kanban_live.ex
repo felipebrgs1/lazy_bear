@@ -15,7 +15,8 @@ defmodule OrquestWeb.KanbanLive do
        editing: nil,
        deleting_card_id: nil,
        form: %{},
-       projects: Projects.list(),
+       projects: Projects.list_with_colors(),
+       projects_map: Projects.map_by_path(),
        show_project_modal: false,
        project_form: %{}
      )}
@@ -27,14 +28,17 @@ defmodule OrquestWeb.KanbanLive do
   end
 
   def handle_info(:projects_updated, socket) do
-    {:noreply, assign(socket, projects: Projects.list())}
+    {:noreply, assign(socket, projects: Projects.list_with_colors(), projects_map: Projects.map_by_path())}
   end
 
   @impl true
   def handle_event("add_card", %{"column_id" => column_id, "title" => title} = params, socket) do
     if String.trim(title) != "" do
       project_path = Map.get(params, "project_path", "")
-      attrs = %{title: title, description: "New task", priority: 2}
+      tags_raw = Map.get(params, "tags", "")
+      tags = if String.trim(tags_raw) != "", do: String.split(tags_raw, ",") |> Enum.map(&String.trim/1), else: []
+      priority = String.to_integer(Map.get(params, "priority", "3"))
+      attrs = %{title: title, description: "New task", priority: priority, tags: tags}
       attrs = if project_path != "", do: Map.put(attrs, :project_path, project_path), else: attrs
       Kanban.add_card(column_id, attrs)
     end
@@ -72,7 +76,9 @@ defmodule OrquestWeb.KanbanLive do
      assign(socket, editing: card_id, form: %{
        title: card.title,
        description: card.description,
-       project_path: card.project_path || ""
+       project_path: card.project_path || "",
+       tags: if(card.tags, do: Enum.join(card.tags, ", "), else: ""),
+       priority: Integer.to_string(card.priority || 3)
      })}
   end
 
@@ -84,6 +90,12 @@ defmodule OrquestWeb.KanbanLive do
     attrs = %{title: title, description: description}
     project_path = Map.get(params, "project_path", "")
     attrs = if project_path != "", do: Map.put(attrs, :project_path, project_path), else: attrs
+    tags_raw = Map.get(params, "tags", "")
+    attrs = if String.trim(tags_raw) != "",
+      do: Map.put(attrs, :tags, String.split(tags_raw, ",") |> Enum.map(&String.trim/1)),
+      else: Map.put(attrs, :tags, [])
+    priority = String.to_integer(Map.get(params, "priority", "3"))
+    attrs = Map.put(attrs, :priority, priority)
     Kanban.update_card(card_id, attrs)
     {:noreply, assign(socket, editing: nil, form: %{})}
   end
@@ -94,7 +106,8 @@ defmodule OrquestWeb.KanbanLive do
 
   def handle_event("trigger_orchestrator", _, socket) do
     send(Orchestrator, :tick)
-    {:noreply, socket}
+    Kanban.reload()
+    {:noreply, assign(socket, board: Kanban.get_board())}
   end
 
   def handle_event("start_card", %{"card_id" => card_id}, socket) do
@@ -125,7 +138,8 @@ defmodule OrquestWeb.KanbanLive do
       alias_name = if alias_name == "", do: derive_alias(path), else: alias_name
 
       Projects.add(alias_name, path)
-      {:noreply, socket |> assign(projects: Projects.list(), project_form: %{})}
+      Kanban.reload()
+      {:noreply, socket |> assign(projects: Projects.list_with_colors(), projects_map: Projects.map_by_path(), board: Kanban.get_board(), project_form: %{})}
     else
       {:noreply, assign(socket, project_form: %{})}
     end
@@ -133,7 +147,8 @@ defmodule OrquestWeb.KanbanLive do
 
   def handle_event("remove_project", %{"alias" => alias_name}, socket) do
     Projects.remove(alias_name)
-    {:noreply, assign(socket, projects: Projects.list())}
+    Kanban.reload()
+    {:noreply, assign(socket, projects: Projects.list_with_colors(), projects_map: Projects.map_by_path(), board: Kanban.get_board())}
   end
 
   def handle_event("folder_selected", %{"name" => dir_name} = params, socket) do
@@ -383,6 +398,20 @@ defmodule OrquestWeb.KanbanLive do
                             {String.slice(card.agent_status, 0, 3)}
                           </span>
 
+                          <!-- Priority Badge -->
+                          <%= if card.priority do %>
+                            <span class={[
+                              "text-[9px] font-bold px-1.5 py-0.5 rounded border",
+                              cond do
+                                card.priority <= 2 -> "bg-red-500/10 text-red-500 border-red-500/20"
+                                card.priority == 3 -> "bg-amber-500/10 text-amber-500 border-amber-500/20"
+                                true -> "bg-muted/50 text-muted-foreground border-border"
+                              end
+                            ]}>
+                              P{card.priority}
+                            </span>
+                          <% end %>
+
                           <!-- Lock Icon for running -->
                           <%= if card.agent_status == "running" do %>
                             <span class="p-1 rounded text-amber-500" title="Em execução">
@@ -415,6 +444,67 @@ defmodule OrquestWeb.KanbanLive do
                         <p class={"text-[12px] text-muted-foreground mt-2 leading-relaxed transition-all #{desc_class}"}>
                           {card.description}
                         </p>
+                      <% end %>
+
+                      <!-- Tags always visible -->
+                      <div class="mt-2 flex items-center gap-1.5 flex-wrap">
+                        <%= for tag <- card.tags do %>
+                          <span class="text-[9px] font-medium text-muted-foreground bg-muted/40 px-1.5 py-0.5 rounded">
+                            {tag}
+                          </span>
+                        <% end %>
+                      </div>
+
+                      <!-- Project Badge -->
+                      <%= if card.project_path do %>
+                        <% project = Map.get(@projects_map, card.project_path) %>
+                        <%= if project do %>
+                          <div class="mt-2 flex items-center gap-1.5">
+                            <span
+                              class="w-2 h-2 rounded-full shrink-0"
+                              style={"background-color: #{project.color}"}
+                            ></span>
+                            <span class="text-[10px] font-medium text-muted-foreground/70">
+                              {project.alias}
+                            </span>
+                          </div>
+                        <% end %>
+                      <% end %>
+
+                      <!-- Move to Todo (backlog → todo) -->
+                      <%= if column.id == "backlog" && card.agent_status == "idle" do %>
+                        <div class="mt-3 pt-2 border-t border-border/40">
+                          <button
+                            type="button"
+                            phx-click="move_card"
+                            phx-value-card_id={card.id}
+                            phx-value-to_column="todo"
+                            class="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-white text-xs font-semibold shadow-sm hover:shadow-blue-500/20 transition-all"
+                          >
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                            </svg>
+                            Mover para Todo
+                          </button>
+                        </div>
+                      <% end %>
+
+                      <!-- Move to Backlog (todo → backlog) -->
+                      <%= if column.id == "todo" && card.agent_status == "idle" do %>
+                        <div class="mt-3 pt-2 border-t border-border/40">
+                          <button
+                            type="button"
+                            phx-click="move_card"
+                            phx-value-card_id={card.id}
+                            phx-value-to_column="backlog"
+                            class="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-muted hover:bg-muted/80 text-muted-foreground text-xs font-semibold border border-border/50 transition-all"
+                          >
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                            </svg>
+                            Mover para Backlog
+                          </button>
+                        </div>
                       <% end %>
 
                       <!-- Start Button (only for idle cards in todo) -->
@@ -633,9 +723,39 @@ defmodule OrquestWeb.KanbanLive do
                 />
               </div>
 
-              <div class="space-y-1.5 flex-1 flex flex-col min-h-[400px]">
+              <div class="space-y-1.5">
                 <label class="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest px-1">
-                  Descrição
+                  Tags
+                </label>
+                <input
+                  type="text"
+                  name="tags"
+                  value={@form[:tags]}
+                  class="w-full bg-muted/20 border border-border/60 hover:border-border rounded-xl px-4 py-3 text-sm text-foreground focus:outline-none focus:border-foreground/30 focus:ring-4 focus:ring-foreground/5 transition-all"
+                  placeholder="backend, auth, refactor"
+                  autocomplete="off"
+                />
+              </div>
+
+              <div class="space-y-1.5">
+                <label class="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest px-1">
+                  Prioridade
+                </label>
+                <select
+                  name="priority"
+                  class="w-full bg-muted/20 border border-border/60 hover:border-border rounded-xl px-4 py-2.5 text-sm text-foreground font-mono focus:outline-none focus:border-foreground/30 focus:ring-4 focus:ring-foreground/5 transition-all cursor-pointer"
+                >
+                  <option value="1" selected={@form[:priority] == "1"} class="bg-card text-foreground">1 — Urgente</option>
+                  <option value="2" selected={@form[:priority] == "2"} class="bg-card text-foreground">2 — Alta</option>
+                  <option value="3" selected={@form[:priority] == "3" || !@form[:priority]} class="bg-card text-foreground">3 — Média</option>
+                  <option value="4" selected={@form[:priority] == "4"} class="bg-card text-foreground">4 — Baixa</option>
+                  <option value="5" selected={@form[:priority] == "5"} class="bg-card text-foreground">5 — Mínima</option>
+                </select>
+              </div>
+
+              <div class="space-y-1.5 flex-1 flex flex-col min-h-[300px]">
+                <label class="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest px-1">
+                  Body <span class="text-[9px] font-normal lowercase opacity-60">(enviado para IA)</span>
                 </label>
                 <textarea
                   name="description"
@@ -716,8 +836,14 @@ defmodule OrquestWeb.KanbanLive do
                     <%= for p <- @projects do %>
                       <div class="flex items-center justify-between bg-muted/20 border border-border/40 rounded-lg px-4 py-2.5">
                         <div class="flex flex-col min-w-0">
-                          <span class="text-sm font-semibold text-foreground"><%= p.alias %></span>
-                          <span class="text-[11px] font-mono text-muted-foreground truncate"><%= p.path %></span>
+                          <div class="flex items-center gap-2">
+                            <span
+                              class="w-2.5 h-2.5 rounded-full shrink-0"
+                              style={"background-color: #{p.color}"}
+                            ></span>
+                            <span class="text-sm font-semibold text-foreground"><%= p.alias %></span>
+                          </div>
+                          <span class="text-[11px] font-mono text-muted-foreground truncate pl-[18px]"><%= p.path %></span>
                         </div>
                         <button
                           phx-click="remove_project"

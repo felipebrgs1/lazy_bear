@@ -14,6 +14,7 @@ defmodule Orquest.Kanban.Card do
     :tmux_session,
     :tags,
     :output_log,
+    :status,
     :created_at,
     :updated_at
   ]
@@ -21,7 +22,7 @@ defmodule Orquest.Kanban.Card do
   def new(attrs) do
     now = DateTime.utc_now()
     %__MODULE__{
-      id: Uniq.UUID.uuid4(),
+      id: attrs[:id] || Uniq.UUID.uuid4(),
       title: attrs[:title] || "Untitled",
       description: attrs[:description] || "",
       priority: attrs[:priority] || 3,
@@ -30,6 +31,7 @@ defmodule Orquest.Kanban.Card do
       borrowed_by: nil,
       agent_status: "idle",
       tags: attrs[:tags] || [],
+      status: attrs[:status] || "backlog",
       created_at: now,
       updated_at: now
     }
